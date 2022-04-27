@@ -1,14 +1,14 @@
 [features]
 seeds = false
 [programs.localnet]
-craft_skins = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+craft_skins = "CTvt7mspUNotZfaWNXCtUN2uCjSqxDCyD1nvpNQqixKX"
 
 [registry]
 url = "https://anchor.projectserum.com"
 
 [provider]
 cluster = "localnet"
-wallet = "/Users/drewriester/.config/solana/id.json"
+wallet = "/Users/drewriester/.config/solana/drew.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

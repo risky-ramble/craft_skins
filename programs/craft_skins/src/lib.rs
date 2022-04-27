@@ -7,7 +7,7 @@ use metaplex_token_metadata::state::{Creator, Metadata};
 use metaplex_token_metadata::utils::assert_derivation;
 use std::str::FromStr;
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("CTvt7mspUNotZfaWNXCtUN2uCjSqxDCyD1nvpNQqixKX");
 
 #[program]
 pub mod craft_skins {
@@ -22,29 +22,32 @@ pub mod craft_skins {
     }
 
     /*
-
+        Recipe is an NFT
+        Recipe mint is used as a seed to find the Recipe account
+        which contains Vec<Ingredient>
+        Recipe NFT is the Collection struct in the all skin metadata...
+    */
     pub fn create_recipe(
         // CreateRecipe contains accounts to init Recipe NFT
         ctx: Context<CreateRecipe>,
         ingredient_mints: Vec<Pubkey>,
         ingredient_amounts: Vec<u64>,
+        program_signer_bump: u8,
     ) -> Result<()> {
-        /*** populate Recipe within CreateRecipe ***/
         let recipe_account = &mut ctx.accounts.recipe;
 
         // loop through ingredient_mints / ingredient_amounts
-        // add to CreateRecipe.recipe.ingredients = Vec<Ingredient>
+        // add to CreateRecipe.recipe, see Recipe in lib.rs
         for (i, mint) in ingredient_mints.iter().enumerate() {
-            let ingredient = Ingredient {
-                mint: *mint,
-                amount: *ingredient_amounts.get(i).unwrap(),
-            };
-
-            recipe_account.ingredients.push(ingredient);
+            recipe_account.mints.push(*mint);
+            recipe_account
+                .amounts
+                .push(*ingredient_amounts.get(i).unwrap());
         }
         Ok(())
     }
 
+    /*
     pub fn add_skin(ctx: Context<Skin>) -> Result<()> {
         Ok(())
     }
@@ -101,10 +104,8 @@ pub struct Manager {
     admin: Pubkey,
 }
 
-/*
-
 #[derive(Accounts)]
-#[instruction(admin_bump: u8)]
+#[instruction(admin_bump: u8, program_signer_bump: u8)]
 pub struct CreateRecipe<'info> {
     // admin within Manager, payer for accounts
     #[account(mut, address = program_manager.admin)]
@@ -113,6 +114,10 @@ pub struct CreateRecipe<'info> {
     // holds admin within struct (clean way of defining it)
     #[account(seeds = [b"admin"], bump = admin_bump)]
     pub program_manager: Account<'info, Manager>,
+
+    ///CHECK: Is simply a pda - seeds will be from program
+    #[account(mut,seeds = [b"signer"], bump = program_signer_bump)]
+    pub program_pda_signer: AccountInfo<'info>,
 
     // defines vector of ingredients to transfer
     #[account(
@@ -131,8 +136,6 @@ pub struct CreateRecipe<'info> {
     ///CHECK: verification is run in instruction
     #[account(mut)]
     pub recipe_metadata: AccountInfo<'info>,
-    ///CHECK: verification is run in instruction
-    pub recipe_master_edition: AccountInfo<'info>,
 
     /*** required programs to init accounts for Master Edition NFT ***/
     // holds SOL to pay for all Account rent
@@ -155,22 +158,17 @@ pub struct CreateRecipe<'info> {
 */
 #[account]
 pub struct Recipe {
-    pub ingredients: Vec<Ingredient>,
+    pub mints: Vec<Pubkey>,
+    pub amounts: Vec<u64>,
 }
 
-#[account]
-pub struct Ingredient {
-    pub mint: Pubkey,
-    pub amount: u64,
-}
-
-// defines new master edition NFT
-// Collection in metadata = Recipe NFT (ingredients)
+/*
 #[derive(Accounts)]
 pub struct Skin {}
 
 #[derive(Accounts)]
 pub struct Craft {}
+
 
 #[error_code]
 pub enum ErrorCode {
@@ -186,12 +184,5 @@ pub enum ErrorCode {
     DerivedKeyInvalid,
     #[msg("AccountNotInitialized")]
     NotInitialized,
-}
-
-pub mod constant {
-    pub const ASSOCIATED_TOKEN_PROGRAM: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
-    pub const TOKEN_PROGRAM: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
-    pub const PREFIX: &str = "COMPTOIR";
-    pub const ESCROW: &str = "ESCROW";
 }
 */
