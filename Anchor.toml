@@ -1,7 +1,7 @@
 [features]
 seeds = false
 [programs.localnet]
-craft_skins = "CTvt7mspUNotZfaWNXCtUN2uCjSqxDCyD1nvpNQqixKX"
+craft_skins = "34FUZfjWu2jMkBti3sKDrHH3rWRS3MjhWC5xjBps6cku"
 
 [registry]
 url = "https://anchor.projectserum.com"
@@ -10,5 +10,10 @@ url = "https://anchor.projectserum.com"
 cluster = "localnet"
 wallet = "/Users/drewriester/.config/solana/drew.json"
 
+[[test.genesis]]
+address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+program = "target/deploy/mpl_token_metadata.so"
+
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+

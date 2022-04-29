@@ -19,10 +19,14 @@ const {
 let provider = anchor.AnchorProvider.env()
 anchor.setProvider(provider);
 
-// Address of deployed program (not needed, just for reference)
-// const programId = new anchor.web3.PublicKey("CTvt7mspUNotZfaWNXCtUN2uCjSqxDCyD1nvpNQqixKX");
-
 describe("craft_skins", () => {
+
+  // to see important console.logs, I prefix with cool emojis :)
+  let alien = String.fromCodePoint(0x1F47E);
+  let bomb = String.fromCodePoint(0x1F4A5)
+  let unicorn = String.fromCodePoint(0x1F984)
+
+  const connection = new anchor.web3.Connection("https://localhost:8899/");
 
   const program = anchor.workspace.CraftSkins as Program<CraftSkins>;
 
@@ -31,7 +35,7 @@ describe("craft_skins", () => {
 
   // admin: human
   let program_manager_acc: anchor.web3.PublicKey
-  let manager_bump: number
+  let program_manager_bump: number
 
   // admin: program PDA
   let program_signer: anchor.web3.PublicKey
@@ -41,31 +45,31 @@ describe("craft_skins", () => {
   let recipe_bump: number
 
   // TEST initialize
-  it("Is initialized!", async () => {
+  it("Is initialized", async () => {
+
     // airdrop funds to program manager
     manager = anchor.web3.Keypair.generate();
-    let manager_airdrop = await provider.connection.requestAirdrop(
-      manager.publicKey,
-      anchor.web3.LAMPORTS_PER_SOL
-    );
-    await provider.connection.confirmTransaction(manager_airdrop);
-
+    console.log('manager: ', manager.publicKey.toString())
+    const managerSig = await provider.connection.requestAirdrop(manager.publicKey, anchor.web3.LAMPORTS_PER_SOL);
+    console.log('manager airdrop? ', await provider.connection.confirmTransaction(managerSig));
+    
     // airdrop funds to test user
     user = anchor.web3.Keypair.generate();
-    let user_airdrop = await provider.connection.requestAirdrop(
-      user.publicKey,
-      anchor.web3.LAMPORTS_PER_SOL
-    );
-    await provider.connection.confirmTransaction(user_airdrop);
+    console.log('user: ', user.publicKey.toString())
+    const userSig = await provider.connection.requestAirdrop(user.publicKey, anchor.web3.LAMPORTS_PER_SOL);
+    console.log('user airdrop? ', await provider.connection.confirmTransaction(userSig));
 
     // init program manager
-    [program_manager_acc, manager_bump] =
+    [program_manager_acc, program_manager_bump] =
       await anchor.web3.PublicKey.findProgramAddress(
         [Buffer.from("manager")],
         program.programId
       );
+    console.log('program_manager_acc: ', program_manager_acc.toString())
 
-    let init_tx = await program.methods.initialize()
+    // manager insufficient funds?
+    try {
+      let init_tx = await program.methods.initialize()
       .accounts({
         manager: manager.publicKey,
         programManager: program_manager_acc,
@@ -73,8 +77,10 @@ describe("craft_skins", () => {
       })
       .signers([manager])
       .rpc()
-
-    console.log("Initialize transaction signature", init_tx);
+      console.log(`${alien} Initialize transaction signature `, init_tx);
+    } catch (err) {
+      console.log(`${bomb} initialize failed `, err)
+    }
   }); // end initialize
 
   /*
@@ -84,13 +90,13 @@ describe("craft_skins", () => {
       init program PDA signer => signs for PDAs, like escrow token accounts
       init PDA escrow token accounts for ingredients to be transferred
         => uses ingredientMints as seed
-      init recipe account
-      init recipe token account
-      init recipe mint
-      init recipe metadata
-      init recipe master edition
+      init recipe account (ingredients)
+      init recipe token account, NFT
+      init recipe mint, NFT
+      init recipe metadata, NFT
+      init recipe master edition, NFT
   */
-  it("Craft recipe!", async () => {
+  it("Craft recipe", async () => {
 
     // program signer => signs for escrow PDAs
     [program_signer, program_signer_bump] =
@@ -98,6 +104,8 @@ describe("craft_skins", () => {
         [Buffer.from("signer")],
         program.programId
       );
+    console.log('program_signer: ', program_signer.toString())
+    console.log('program_manager_acc: ', program_manager_acc.toString())
 
     /*
       necessary accounts to make NFT:
@@ -111,45 +119,38 @@ describe("craft_skins", () => {
       provider.connection
     );
     const data = nft_data(manager.publicKey);
-    const [
+    let [
       mint, 
       recipe_metadata_PDA, 
       mint_tx,
-      recipe_token_account
+      manager_recipe_ata
     ] = await createMint(
         provider.connection,
-        provider.wallet.publicKey,
-        provider.wallet.publicKey,
-        provider.wallet.publicKey,
+        provider.wallet.publicKey, // authority
+        provider.wallet.publicKey, // payer
+        manager.publicKey, // destination (owner)
         lamports,
-        data,
-        nft_json_url
+        data, // metadata account
+        nft_json_url // metadata URI
     );
 
-    console.log('mint: ', mint.publicKey.toString())
-    console.log('recipe_metadata_PDA: ', recipe_metadata_PDA.toString())
-    console.log("mint_tx payer: ", mint_tx.feePayer.toString())
-    console.log("recipe_token_account: ", recipe_token_account.toString())
-
-    let signer = provider.wallet as anchor.Wallet
-    mint_tx.partialSign(signer.payer);
-    const buffer = mint_tx.serialize();
-    let confirmTx = await program.provider.connection.sendRawTransaction(buffer);
-    console.log('confirmed? ', confirmTx)
-
-    //const signers = [manager];
-    //await provider.sendAndConfirm(mint_tx);
-  
     // init mint account
-    let recipe_mint = new Token(provider.connection, mint.publicKey, TOKEN_PROGRAM_ID, manager)
+    let signer = (provider.wallet as anchor.Wallet).payer
+    let recipe_mint = new Token(connection, mint.publicKey, TOKEN_PROGRAM_ID, signer)
+    console.log('recipe_mint: ', recipe_mint.publicKey.toString())
 
-    // associated token account: holds mint, owned by manager
-    let manager_recipe_ata = await Token.getAssociatedTokenAddress(
-      ASSOCIATED_PROGRAM_ID,
-      TOKEN_PROGRAM_ID,
-      recipe_mint.publicKey,
-      manager.publicKey
-    );
+    console.log('recipe_metadata_PDA: ', recipe_metadata_PDA.toString())
+    console.log("manager_recipe_ata: ", manager_recipe_ata.toString())
+
+    mint_tx = await provider.wallet.signTransaction(mint_tx)
+
+    // turn transaction into Buffer (binary array), does validation in the process
+    let dehydrated = mint_tx.serialize()
+    console.log('cereal')
+  
+    let txhash = await provider.connection.sendRawTransaction(dehydrated)  
+    console.log('mint tx hash: ', txhash)
+    console.log('mint confirmed? ', await provider.connection.confirmTransaction(txhash));
 
     // test ingredients
     let ingredientMints = []
@@ -170,28 +171,32 @@ describe("craft_skins", () => {
       [Buffer.from("recipe"), recipe_mint.publicKey.toBuffer()],
       program.programId
     );
+    console.log('recipe_account: ', recipe_account.toString())
 
     // call anchor program create_recipe
-    const create_recipe_tx = await program.methods.createRecipe(
-      ingredientMints, ingredientAmounts, program_signer_bump
-      )
-      .accounts({
-        manager: manager.publicKey,
-        programManager: program_manager_acc,
-        programPdaSigner: program_signer,
-        recipe: recipe_account,
-        recipeTokenAccount: manager_recipe_ata,
-        recipeMint: recipe_mint.publicKey,
-        recipeMetadata: recipe_metadata_PDA,
-        rentAccount: anchor.web3.SYSVAR_RENT_PUBKEY,
-        tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: anchor.web3.SystemProgram.programId
-      })
-      .signers([manager])
-      .rpc()
-
-    console.log("CreateRecipe transaction signature", create_recipe_tx);
+    try {
+      const create_recipe_tx = await program.methods.createRecipe(
+        ingredientMints, ingredientAmounts, program_signer_bump
+        )
+        .accounts({
+          manager: manager.publicKey,
+          programManager: program_manager_acc,
+          programPdaSigner: program_signer,
+          recipe: recipe_account,
+          recipeTokenAccount: manager_recipe_ata,
+          recipeMint: recipe_mint.publicKey,
+          recipeMetadata: recipe_metadata_PDA,
+          rentAccount: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId
+        })
+        .signers([manager])
+        .rpc()
+      console.log(`${unicorn} CreateRecipe transaction signature `, create_recipe_tx);
+    } catch (err) {
+      console.log(`${bomb} create_recipe failed`, err)
+    }
   }); // end createRecipe
 
 });

@@ -23,15 +23,15 @@ export const createMint = async (
     url
 ): Promise<[Keypair, PublicKey, programs.core.Transaction, PublicKey]> => {
     const mint = Keypair.generate();
-    console.log(`https://solscan.io/token/${mint.publicKey.toString()}`);
-
     const tx_mint = new Transaction({ feePayer: fee_payer });
+
     let ata = await Token.getAssociatedTokenAddress(
       ASSOCIATED_TOKEN_PROGRAM_ID, // always associated token program id
       TOKEN_PROGRAM_ID, // always token program id
       mint.publicKey, // mint
       dest_owner // token account authority,
     );
+    
     tx_mint.add(
       // create mint
       SystemProgram.createAccount({
@@ -84,8 +84,6 @@ export const createMint = async (
       ],
     });
   
-  
-  
     const tx_metadata = new CreateMetadata(
       {
         feePayer: fee_payer,
@@ -98,10 +96,16 @@ export const createMint = async (
         mintAuthority: authority,
       }
     );
-    
   
     const tx = Transaction.fromCombined([ tx_mint, tx_metadata ]);
-    tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+
+    let commitment: anchor.web3.Commitment = "confirmed"
+    let block = await connection.getLatestBlockhash(commitment)
+    tx.recentBlockhash = block.blockhash;
+
+    tx.feePayer = fee_payer
+    console.log('feePayer: ', tx.feePayer.toString())
+    tx.partialSign(mint)
   
     return [ mint, metadataPDA, tx, ata ];
 }

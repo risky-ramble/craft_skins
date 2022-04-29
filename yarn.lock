@@ -154,10 +154,10 @@
     buffer-layout "^1.2.0"
     dotenv "10.0.0"
 
-"@solana/web3.js@^1.21.0", "@solana/web3.js@^1.30.2", "@solana/web3.js@^1.31.0", "@solana/web3.js@^1.36.0", "@solana/web3.js@^1.39.1":
-  version "1.39.1"
-  resolved "https://registry.yarnpkg.com/@solana/web3.js/-/web3.js-1.39.1.tgz#858ecd42ff2a5bcba3a4bb642a50194d77e2a578"
-  integrity sha512-Q7XnWTAiU7n7GcoINDAAMLO7CJHpm5kPK46HKwJi2x0cusHQ3WFa7QEp6aPzH7tuf7yl/Kw1lYitcwTVOvqARA==
+"@solana/web3.js@^1.21.0", "@solana/web3.js@^1.30.2", "@solana/web3.js@^1.31.0", "@solana/web3.js@^1.36.0":
+  version "1.41.1"
+  resolved "https://registry.yarnpkg.com/@solana/web3.js/-/web3.js-1.41.1.tgz#4f86df8de31ecd68b44ca67d27e446fefa2533d1"
+  integrity sha512-Z92/E2+U8CcALXfXpx+D7YjIB4L8A9kSSc0UXCDzaIF0exawGogwDKz0znNuciSziOzLxHNgCxZ8GF22m9f8VQ==
   dependencies:
     "@babel/runtime" "^7.12.5"
     "@ethersproject/sha2" "^5.5.0"
@@ -232,14 +232,14 @@
   integrity sha512-Z61JK7DKDtdKTWwLeElSEBcWGRLY8g95ic5FoQqI9CMx0ns/Ghep3B4DfcEimiKMvtamNVULVNKEsiwV3aQmXw==
 
 "@types/node@*":
-  version "17.0.27"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-17.0.27.tgz#f4df3981ae8268c066e8f49995639f855469081e"
-  integrity sha512-4/Ke7bbWOasuT3kceBZFGakP1dYN2XFd8v2l9bqF2LNWrmeU07JLpp56aEeG6+Q3olqO5TvXpW0yaiYnZJ5CXg==
+  version "17.0.29"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-17.0.29.tgz#7f2e1159231d4a077bb660edab0fde373e375a3d"
+  integrity sha512-tx5jMmMFwx7wBwq/V7OohKDVb/JwJU5qCVkeLMh1//xycAJ/ESuw9aJ9SEtlCZDYi2pBfe4JkisSoAtbOsBNAA==
 
 "@types/node@^12.12.54":
-  version "12.20.49"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-12.20.49.tgz#97897a33dd145490f514bbcbccefc178534e360f"
-  integrity sha512-5e6QNb9bkeh4Hni4ktLqUZuUqnGTX/kou2aZkXyxtuYaHXgBm+In1SHR9V+7kDzWzjB08KC2uqt2doDi7cuAAA==
+  version "12.20.50"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-12.20.50.tgz#14ba5198f1754ffd0472a2f84ab433b45ee0b65e"
+  integrity sha512-+9axpWx2b2JCVovr7Ilgt96uc6C1zBKOQMpGtRbWT9IoR/8ue32GGMfGA4woP8QyP2gBs6GQWEVM3tCybGCxDA==
 
 "@types/qs@*":
   version "6.9.7"

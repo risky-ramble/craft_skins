@@ -7,7 +7,7 @@ use metaplex_token_metadata::state::{Creator, Metadata};
 use metaplex_token_metadata::utils::assert_derivation;
 use std::str::FromStr;
 
-declare_id!("CTvt7mspUNotZfaWNXCtUN2uCjSqxDCyD1nvpNQqixKX");
+declare_id!("34FUZfjWu2jMkBti3sKDrHH3rWRS3MjhWC5xjBps6cku");
 
 #[program]
 pub mod craft_skins {
@@ -24,8 +24,7 @@ pub mod craft_skins {
     /*
         Recipe is an NFT
         Recipe mint is used as a seed to find the Recipe account
-        which contains Vec<Ingredient>
-        Recipe NFT is the Collection struct in the all skin metadata...
+        which contains vector of mints + amounts needed to craft a recipe
     */
     pub fn create_recipe(
         // CreateRecipe contains accounts to init Recipe NFT
@@ -37,7 +36,7 @@ pub mod craft_skins {
         let recipe_account = &mut ctx.accounts.recipe;
 
         // loop through ingredient_mints / ingredient_amounts
-        // add to CreateRecipe.recipe, see Recipe in lib.rs
+        // add to CreateRecipe.recipe, see Recipe
         for (i, mint) in ingredient_mints.iter().enumerate() {
             recipe_account.mints.push(*mint);
             recipe_account
@@ -105,14 +104,13 @@ pub struct Manager {
 }
 
 #[derive(Accounts)]
-#[instruction(admin_bump: u8, program_signer_bump: u8)]
+#[instruction(program_signer_bump: u8)]
 pub struct CreateRecipe<'info> {
     // admin within Manager, payer for accounts
     #[account(mut, address = program_manager.admin)]
     pub manager: Signer<'info>,
 
     // holds admin within struct (clean way of defining it)
-    #[account(seeds = [b"admin"], bump = admin_bump)]
     pub program_manager: Account<'info, Manager>,
 
     ///CHECK: Is simply a pda - seeds will be from program
