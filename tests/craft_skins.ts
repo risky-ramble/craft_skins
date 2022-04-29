@@ -38,8 +38,12 @@ describe("craft_skins", () => {
   let program_manager_bump: number
 
   // admin: program PDA
-  let program_signer: anchor.web3.PublicKey
+  let program_pda_signer: anchor.web3.PublicKey
   let program_signer_bump: number
+
+  // escrow account to hold ingredient
+  let escrow_1: anchor.web3.PublicKey 
+  let escrow_bump_1: number
 
   let recipe_account: anchor.web3.PublicKey
   let recipe_bump: number
@@ -99,12 +103,12 @@ describe("craft_skins", () => {
   it("Craft recipe", async () => {
 
     // program signer => signs for escrow PDAs
-    [program_signer, program_signer_bump] =
+    [program_pda_signer, program_signer_bump] =
       await anchor.web3.PublicKey.findProgramAddress(
         [Buffer.from("signer")],
         program.programId
       );
-    console.log('program_signer: ', program_signer.toString())
+    console.log('program_pda_signer: ', program_pda_signer.toString())
     console.log('program_manager_acc: ', program_manager_acc.toString())
 
     /*
@@ -146,17 +150,10 @@ describe("craft_skins", () => {
 
     // turn transaction into Buffer (binary array), does validation in the process
     let dehydrated = mint_tx.serialize()
-    console.log('cereal')
   
     let txhash = await provider.connection.sendRawTransaction(dehydrated)  
-    console.log('mint tx hash: ', txhash)
-    console.log('mint confirmed? ', await provider.connection.confirmTransaction(txhash));
-
-    // test ingredients
-    let ingredientMints = []
-    ingredientMints.push(new PublicKey("Gvgxm6wRv9rkWdFqB4GSVt7DbetZJzedJV1JbJtJHtuh"));
-    let ingredientAmounts = []
-    ingredientAmounts.push(new BN(10));
+    console.log('mint tx hash: ', txhash);
+    //console.log('mint confirmed? ', await provider.connection.confirmTransaction(txhash));
 
     /* 
       get PDA of Recipe account
@@ -173,15 +170,31 @@ describe("craft_skins", () => {
     );
     console.log('recipe_account: ', recipe_account.toString())
 
+    // test ingredient
+    let ingredientMints = []
+    ingredientMints.push(new PublicKey("Gvgxm6wRv9rkWdFqB4GSVt7DbetZJzedJV1JbJtJHtuh"));
+    let ingredientAmounts = []
+    ingredientAmounts.push(new BN(10));
+    let ingredientEscrows = [];
+    [escrow_1, escrow_bump_1] = await anchor.web3.PublicKey.findProgramAddress(
+      [
+        Buffer.from("escrow"), 
+        recipe_mint.publicKey.toBuffer(),
+        recipe_account.toBuffer()
+      ],
+      program.programId
+    );
+    ingredientEscrows.push(escrow_1);
+
     // call anchor program create_recipe
     try {
       const create_recipe_tx = await program.methods.createRecipe(
-        ingredientMints, ingredientAmounts, program_signer_bump
+        program_signer_bump, ingredientMints, ingredientAmounts, ingredientEscrows
         )
         .accounts({
           manager: manager.publicKey,
           programManager: program_manager_acc,
-          programPdaSigner: program_signer,
+          programPdaSigner: program_pda_signer,
           recipe: recipe_account,
           recipeTokenAccount: manager_recipe_ata,
           recipeMint: recipe_mint.publicKey,

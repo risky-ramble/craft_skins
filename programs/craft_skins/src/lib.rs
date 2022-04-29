@@ -6,6 +6,8 @@ use metaplex_token_metadata::state::PREFIX as METAPLEX_PREFIX;
 use metaplex_token_metadata::state::{Creator, Metadata};
 use metaplex_token_metadata::utils::assert_derivation;
 use std::str::FromStr;
+pub mod utils;
+use utils::*;
 
 declare_id!("34FUZfjWu2jMkBti3sKDrHH3rWRS3MjhWC5xjBps6cku");
 
@@ -29,20 +31,30 @@ pub mod craft_skins {
     pub fn create_recipe(
         // CreateRecipe contains accounts to init Recipe NFT
         ctx: Context<CreateRecipe>,
+        program_signer_bump: u8,
         ingredient_mints: Vec<Pubkey>,
         ingredient_amounts: Vec<u64>,
-        program_signer_bump: u8,
+        ingredient_escrows: Vec<Pubkey>,
     ) -> Result<()> {
-        let recipe_account = &mut ctx.accounts.recipe;
-
         // loop through ingredient_mints / ingredient_amounts
-        // add to CreateRecipe.recipe, see Recipe
+        // add to CreateRecipe.recipe, see "pub struct Recipe" below
+        let recipe_account = &mut ctx.accounts.recipe;
         for (i, mint) in ingredient_mints.iter().enumerate() {
             recipe_account.mints.push(*mint);
             recipe_account
                 .amounts
                 .push(*ingredient_amounts.get(i).unwrap());
         }
+
+        // validate accounts to create Recipe NFT
+        verify_recipe_nft(
+            &ctx.accounts.recipe_token_account, // token account holds everything
+            &ctx.accounts.recipe_mint,          // mint is address
+            &ctx.accounts.recipe_metadata,      // metadata is specific data, Metaplex standard
+            &ctx.accounts.program_pda_signer,   //
+            &ctx.accounts.manager,
+        );
+
         Ok(())
     }
 
