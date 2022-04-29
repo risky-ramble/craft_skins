@@ -25,6 +25,7 @@ describe("craft_skins", () => {
   let alien = String.fromCodePoint(0x1F47E);
   let bomb = String.fromCodePoint(0x1F4A5)
   let unicorn = String.fromCodePoint(0x1F984)
+  let cherry = String.fromCodePoint(0x1F352)
 
   const program = anchor.workspace.CraftSkins as Program<CraftSkins>;
 
@@ -167,6 +168,26 @@ describe("craft_skins", () => {
         .signers([manager])
         .rpc()
       console.log(`${unicorn} CreateRecipe transaction signature `, create_recipe_tx);
+
+      const created_recipe = await program.account.recipe.fetch(recipe_account);
+      console.log(` ${cherry} created recipe: `)
+      console.log(created_recipe.mints[0].toString());
+      console.log(created_recipe.amounts[0].toNumber())
+  
+      let metadata = await provider.connection.getAccountInfo(
+        recipe_metadata_PDA
+      );
+      let info = MetadataData.deserialize(
+        metadata.data
+      );
+  
+      console.log("recipe metadata? ", info.data.creators);
+  
+      const created_recipe_token = await provider.connection.getParsedAccountInfo(
+        manager_recipe_ata
+      );
+      //@ts-ignore
+      console.log("filled tokens? ", created_recipe_token.value.data.parsed.info);
     } catch (err) {
       console.log(`${bomb} create_recipe failed`, err)
     }
