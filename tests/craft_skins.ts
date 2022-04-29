@@ -26,8 +26,6 @@ describe("craft_skins", () => {
   let bomb = String.fromCodePoint(0x1F4A5)
   let unicorn = String.fromCodePoint(0x1F984)
 
-  const connection = new anchor.web3.Connection("https://localhost:8899/");
-
   const program = anchor.workspace.CraftSkins as Program<CraftSkins>;
 
   let manager: anchor.web3.Keypair
@@ -54,14 +52,8 @@ describe("craft_skins", () => {
     // airdrop funds to program manager
     manager = anchor.web3.Keypair.generate();
     console.log('manager: ', manager.publicKey.toString())
-    const managerSig = await provider.connection.requestAirdrop(manager.publicKey, anchor.web3.LAMPORTS_PER_SOL);
-    console.log('manager airdrop? ', await provider.connection.confirmTransaction(managerSig));
-    
-    // airdrop funds to test user
-    user = anchor.web3.Keypair.generate();
-    console.log('user: ', user.publicKey.toString())
-    const userSig = await provider.connection.requestAirdrop(user.publicKey, anchor.web3.LAMPORTS_PER_SOL);
-    console.log('user airdrop? ', await provider.connection.confirmTransaction(userSig));
+    let airdrop = await provider.connection.requestAirdrop(manager.publicKey, anchor.web3.LAMPORTS_PER_SOL);
+    console.log('airdrop? ', await provider.connection.confirmTransaction(airdrop));
 
     // init program manager
     [program_manager_acc, program_manager_bump] =
@@ -102,21 +94,11 @@ describe("craft_skins", () => {
   */
   it("Craft recipe", async () => {
 
-    // program signer => signs for escrow PDAs
-    [program_pda_signer, program_signer_bump] =
-      await anchor.web3.PublicKey.findProgramAddress(
-        [Buffer.from("signer")],
-        program.programId
-      );
-    console.log('program_pda_signer: ', program_pda_signer.toString())
-    console.log('program_manager_acc: ', program_manager_acc.toString())
-
     /*
       necessary accounts to make NFT:
         associated token account (ata) => owned by user, holds mint
         mint account => address of NFT
         metadata account => holds arbitrary data to customize NFT
-        master edition account => defines NFT as 1/1 (can't print copies)
     */
     // lamports (SOL) required to make mint Account rent exempt
     let lamports = await Token.getMinBalanceRentForExemptMint(
@@ -124,36 +106,25 @@ describe("craft_skins", () => {
     );
     const data = nft_data(manager.publicKey);
     let [
-      mint, 
+      recipe_mint, 
       recipe_metadata_PDA, 
       mint_tx,
       manager_recipe_ata
     ] = await createMint(
         provider.connection,
-        provider.wallet.publicKey, // authority
+        manager.publicKey, // authority
         provider.wallet.publicKey, // payer
         manager.publicKey, // destination (owner)
         lamports,
         data, // metadata account
         nft_json_url // metadata URI
     );
-
-    // init mint account
-    let signer = (provider.wallet as anchor.Wallet).payer
-    let recipe_mint = new Token(connection, mint.publicKey, TOKEN_PROGRAM_ID, signer)
     console.log('recipe_mint: ', recipe_mint.publicKey.toString())
-
     console.log('recipe_metadata_PDA: ', recipe_metadata_PDA.toString())
-    console.log("manager_recipe_ata: ", manager_recipe_ata.toString())
+    console.log('manager_recipe_ata: ', manager_recipe_ata.toString())
 
-    mint_tx = await provider.wallet.signTransaction(mint_tx)
-
-    // turn transaction into Buffer (binary array), does validation in the process
-    let dehydrated = mint_tx.serialize()
-  
-    let txhash = await provider.connection.sendRawTransaction(dehydrated)  
-    console.log('mint tx hash: ', txhash);
-    //console.log('mint confirmed? ', await provider.connection.confirmTransaction(txhash));
+    let sig = await provider.sendAndConfirm(mint_tx, [recipe_mint, manager]);
+    console.log('mint signature: ', sig);
 
     /* 
       get PDA of Recipe account
@@ -175,26 +146,15 @@ describe("craft_skins", () => {
     ingredientMints.push(new PublicKey("Gvgxm6wRv9rkWdFqB4GSVt7DbetZJzedJV1JbJtJHtuh"));
     let ingredientAmounts = []
     ingredientAmounts.push(new BN(10));
-    let ingredientEscrows = [];
-    [escrow_1, escrow_bump_1] = await anchor.web3.PublicKey.findProgramAddress(
-      [
-        Buffer.from("escrow"), 
-        recipe_mint.publicKey.toBuffer(),
-        recipe_account.toBuffer()
-      ],
-      program.programId
-    );
-    ingredientEscrows.push(escrow_1);
 
     // call anchor program create_recipe
     try {
       const create_recipe_tx = await program.methods.createRecipe(
-        program_signer_bump, ingredientMints, ingredientAmounts, ingredientEscrows
+        program_manager_bump, ingredientMints, ingredientAmounts
         )
         .accounts({
-          manager: manager.publicKey,
+          owner: manager.publicKey,
           programManager: program_manager_acc,
-          programPdaSigner: program_pda_signer,
           recipe: recipe_account,
           recipeTokenAccount: manager_recipe_ata,
           recipeMint: recipe_mint.publicKey,

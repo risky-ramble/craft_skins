@@ -29,9 +29,8 @@ export const createMint = async (
       ASSOCIATED_TOKEN_PROGRAM_ID, // always associated token program id
       TOKEN_PROGRAM_ID, // always token program id
       mint.publicKey, // mint
-      dest_owner // token account authority,
+      dest_owner // token account destination/authority,
     );
-    
     tx_mint.add(
       // create mint
       SystemProgram.createAccount({
@@ -67,9 +66,7 @@ export const createMint = async (
         1
       )
     );
-  
     const metadataPDA = await Metadata.getPDA(mint.publicKey);
-  
     const metadataData = new MetadataDataData({
       name: data.name,
       symbol: data.symbol,
@@ -77,17 +74,14 @@ export const createMint = async (
       sellerFeeBasisPoints: data.seller_fee_basis_points,
       creators: [
         new Creator({
-          address: fee_payer.toString(),
+          address: authority.toString(),
           verified: true,
           share: 100,
         })
       ],
     });
-  
     const tx_metadata = new CreateMetadata(
-      {
-        feePayer: fee_payer,
-      },
+      {feePayer: fee_payer},
       {
         metadata: metadataPDA,
         metadataData,
@@ -98,15 +92,6 @@ export const createMint = async (
     );
   
     const tx = Transaction.fromCombined([ tx_mint, tx_metadata ]);
-
-    let commitment: anchor.web3.Commitment = "confirmed"
-    let block = await connection.getLatestBlockhash(commitment)
-    tx.recentBlockhash = block.blockhash;
-
-    tx.feePayer = fee_payer
-    console.log('feePayer: ', tx.feePayer.toString())
-    tx.partialSign(mint)
-  
     return [ mint, metadataPDA, tx, ata ];
 }
 

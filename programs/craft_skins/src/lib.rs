@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::AccountsClose;
 use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, ID as SPL_TOKEN_ID};
 use metaplex_token_metadata::state::PREFIX as METAPLEX_PREFIX;
 use metaplex_token_metadata::state::{Creator, Metadata};
 use metaplex_token_metadata::utils::assert_derivation;
@@ -31,10 +31,9 @@ pub mod craft_skins {
     pub fn create_recipe(
         // CreateRecipe contains accounts to init Recipe NFT
         ctx: Context<CreateRecipe>,
-        program_signer_bump: u8,
+        program_manager_bump: u8,
         ingredient_mints: Vec<Pubkey>,
         ingredient_amounts: Vec<u64>,
-        ingredient_escrows: Vec<Pubkey>,
     ) -> Result<()> {
         // loop through ingredient_mints / ingredient_amounts
         // add to CreateRecipe.recipe, see "pub struct Recipe" below
@@ -45,15 +44,16 @@ pub mod craft_skins {
                 .amounts
                 .push(*ingredient_amounts.get(i).unwrap());
         }
+        msg!("Done recipe iter");
 
         // validate accounts to create Recipe NFT
         verify_recipe_nft(
             &ctx.accounts.recipe_token_account, // token account holds everything
             &ctx.accounts.recipe_mint,          // mint is address
             &ctx.accounts.recipe_metadata,      // metadata is specific data, Metaplex standard
-            &ctx.accounts.program_pda_signer,   //
-            &ctx.accounts.manager,
+            &ctx.accounts.owner,                // owner of Recipe NFT
         );
+        msg!("Done verify_recipe_nft");
 
         Ok(())
     }
@@ -116,30 +116,26 @@ pub struct Manager {
 }
 
 #[derive(Accounts)]
-#[instruction(program_signer_bump: u8)]
+#[instruction(program_manager_bump: u8)]
 pub struct CreateRecipe<'info> {
-    // admin within Manager, payer for accounts
+    // owner of Recipe NFT
     #[account(mut, address = program_manager.admin)]
-    pub manager: Signer<'info>,
+    pub owner: Signer<'info>,
 
-    // holds admin within struct (clean way of defining it)
+    #[account(mut,seeds = [b"manager"], bump = program_manager_bump)]
     pub program_manager: Account<'info, Manager>,
-
-    ///CHECK: Is simply a pda - seeds will be from program
-    #[account(mut,seeds = [b"signer"], bump = program_signer_bump)]
-    pub program_pda_signer: AccountInfo<'info>,
 
     // defines vector of ingredients to transfer
     #[account(
         init,
-        payer = manager,
+        payer = owner,
         seeds = [b"recipe", recipe_mint.key().as_ref()],
         bump,
         space = 240
     )]
     pub recipe: Account<'info, Recipe>,
 
-    /*** required accounts to init a Master Edition NFT ***/
+    /*** required accounts to init an NFT ***/
     #[account(mut)]
     pub recipe_token_account: Account<'info, TokenAccount>,
     pub recipe_mint: Account<'info, Mint>,
@@ -147,7 +143,7 @@ pub struct CreateRecipe<'info> {
     #[account(mut)]
     pub recipe_metadata: AccountInfo<'info>,
 
-    /*** required programs to init accounts for Master Edition NFT ***/
+    /*** required programs to init accounts for NFT ***/
     // holds SOL to pay for all Account rent
     pub rent_account: Sysvar<'info, Rent>,
     // creates Metadata account within Token Account
@@ -172,27 +168,8 @@ pub struct Recipe {
     pub amounts: Vec<u64>,
 }
 
-/*
 #[derive(Accounts)]
 pub struct Skin {}
 
 #[derive(Accounts)]
 pub struct Craft {}
-
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Fee should be <= 10000")]
-    ErrFeeGreaterThan10000,
-    #[msg("Insufficient funds")]
-    ErrInsufficientFunds,
-    #[msg("Metadata mint must match item mint")]
-    ErrMetadataMintNotValid,
-    #[msg("Nft not part of collection")]
-    ErrNftNotPartOfCollection,
-    #[msg("Derived key invalid")]
-    DerivedKeyInvalid,
-    #[msg("AccountNotInitialized")]
-    NotInitialized,
-}
-*/
