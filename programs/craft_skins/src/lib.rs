@@ -52,17 +52,29 @@ pub mod craft_skins {
             &ctx.accounts.recipe_mint,          // mint is address
             &ctx.accounts.recipe_metadata,      // metadata is specific data, Metaplex standard
             &ctx.accounts.owner,                // owner of Recipe NFT
-        );
+        )?;
         msg!("Done verify_recipe_nft");
 
         Ok(())
     }
 
-    /*
-    pub fn add_skin(ctx: Context<Skin>) -> Result<()> {
+    pub fn add_skin(
+        // CreateRecipe contains accounts to init Recipe NFT
+        ctx: Context<AddSkin>,
+        program_manager_bump: u8,
+        recipe_bump: u8,
+    ) -> Result<()> {
+        // validate accounts to create Recipe NFT
+        verify_recipe_nft(
+            &ctx.accounts.recipe_token_account, // token account holds everything
+            &ctx.accounts.recipe_mint,          // mint is address
+            &ctx.accounts.recipe_metadata,      // metadata is specific data, Metaplex standard
+            &ctx.accounts.owner,                // owner of Recipe NFT
+        )?;
+        msg!("Done verify_recipe_nft");
+
         Ok(())
     }
-
     /*
       CLIENT
         "buy skin" button clicked
@@ -82,7 +94,6 @@ pub mod craft_skins {
         validate skin_mint
             owned by Manager
 
-    */
     pub fn craft_skin(ctx: Context<Craft>) -> Result<()> {
         Ok(())
     }
@@ -125,7 +136,10 @@ pub struct CreateRecipe<'info> {
     #[account(mut,seeds = [b"manager"], bump = program_manager_bump)]
     pub program_manager: Account<'info, Manager>,
 
-    // defines vector of ingredients to transfer
+    /**
+      account defining recipe of mints+amounts
+      to craft a skin NFT
+    **/
     #[account(
         init,
         payer = owner,
@@ -135,7 +149,10 @@ pub struct CreateRecipe<'info> {
     )]
     pub recipe: Account<'info, Recipe>,
 
-    /*** required accounts to init an NFT ***/
+    /**
+      required accounts for an NFT
+      should new Recipe NFT to mint
+    **/
     #[account(mut)]
     pub recipe_token_account: Account<'info, TokenAccount>,
     pub recipe_mint: Account<'info, Mint>,
@@ -143,7 +160,9 @@ pub struct CreateRecipe<'info> {
     #[account(mut)]
     pub recipe_metadata: AccountInfo<'info>,
 
-    /*** required programs to init accounts for NFT ***/
+    /**
+      required programs for an NFT
+    **/
     // holds SOL to pay for all Account rent
     pub rent_account: Sysvar<'info, Rent>,
     // creates Metadata account within Token Account
@@ -168,8 +187,73 @@ pub struct Recipe {
     pub amounts: Vec<u64>,
 }
 
+/*
+    validate necessary NFT accounts
+      verify_recipe_nft
+    find ingredients from recipe NFT account param
+    validate recipe account
+      seeds
+      init
+      owned by program?
+    create skin with recipe as Collection
+
+*/
 #[derive(Accounts)]
-pub struct Skin {}
+#[instruction(program_manager_bump: u8, recipe_bump: u8)]
+pub struct AddSkin<'info> {
+    // owner of Recipe NFT
+    #[account(mut, address = program_manager.admin)]
+    pub owner: Signer<'info>,
+
+    #[account(mut,seeds = [b"manager"], bump = program_manager_bump)]
+    pub program_manager: Account<'info, Manager>,
+
+    /**
+      account defining recipe of mints+amounts
+      to craft a skin NFT
+    **/
+    #[account(
+        seeds = [b"recipe", recipe_mint.key().as_ref()],
+        bump = recipe_bump,
+    )]
+    pub recipe: Account<'info, Recipe>,
+
+    /**
+      required accounts for an NFT
+      should be exisiting Recipe NFT
+    **/
+    #[account(mut)]
+    pub recipe_token_account: Account<'info, TokenAccount>,
+    pub recipe_mint: Account<'info, Mint>,
+    ///CHECK: verification is run in instruction
+    #[account(mut)]
+    pub recipe_metadata: AccountInfo<'info>,
+
+    /***
+      required accounts for an NFT
+      should be new skin to mint
+    **/
+    #[account(mut)]
+    pub skin_token_account: Account<'info, TokenAccount>,
+    pub skin_mint: Account<'info, Mint>,
+    ///CHECK: verification is run in instruction
+    #[account(mut)]
+    pub skin_metadata: AccountInfo<'info>,
+
+    /**
+      required programs for an NFT
+    **/
+    // holds SOL to pay for all Account rent
+    pub rent_account: Sysvar<'info, Rent>,
+    // creates Metadata account within Token Account
+    #[account(address = metaplex_token_metadata::ID)]
+    ///CHECK: verification is run in instruction
+    pub token_metadata_program: AccountInfo<'info>,
+    // creates Token Account of NFT
+    pub token_program: Program<'info, Token>,
+    // creates generic Account
+    pub system_program: Program<'info, System>,
+}
 
 #[derive(Accounts)]
 pub struct Craft {}

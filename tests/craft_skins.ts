@@ -3,12 +3,24 @@ import { PublicKey } from "@solana/web3.js";
 import { BN } from "bn.js";
 import { Program } from "@project-serum/anchor";
 import { CraftSkins } from "../target/types/craft_skins";
-import { Token, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { TOKEN_METADATA_PROGRAM_ID } from "./data/constants";
-import { ASSOCIATED_PROGRAM_ID } from "@project-serum/anchor/dist/cjs/utils/token";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  Token,
+  TOKEN_PROGRAM_ID,
+} from '@solana/spl-token';
+import { TOKEN_METADATA_PROGRAM_ID } from './data/constants';
 
-import {createMint} from './utils/utils'
-import {nft_data, nft_json_url} from "./data/data";
+import * as display from './utils/display'
+import {
+  createMint,
+  getMetadataPDA,
+} from './utils/utils'
+import {
+  recipe_nft_data,
+  recipe_json_url,
+  skin_nft_data,
+  skin_json_url
+} from "./data/data";
 require('dotenv').config()
 import { programs } from "@metaplex/js";
 const {
@@ -21,31 +33,29 @@ anchor.setProvider(provider);
 
 describe("craft_skins", () => {
 
-  // to see important console.logs, I prefix with cool emojis :)
-  let alien = String.fromCodePoint(0x1F47E);
-  let bomb = String.fromCodePoint(0x1F4A5)
-  let unicorn = String.fromCodePoint(0x1F984)
-  let cherry = String.fromCodePoint(0x1F352)
-
   const program = anchor.workspace.CraftSkins as Program<CraftSkins>;
 
-  let manager: anchor.web3.Keypair
-  let user:  anchor.web3.Keypair
-
   // admin: human
+  let manager: anchor.web3.Keypair
   let program_manager_acc: anchor.web3.PublicKey
   let program_manager_bump: number
 
-  // admin: program PDA
-  let program_pda_signer: anchor.web3.PublicKey
-  let program_signer_bump: number
-
-  // escrow account to hold ingredient
-  let escrow_1: anchor.web3.PublicKey 
-  let escrow_bump_1: number
-
+  // stores recipe as mints[] + amounts[]
   let recipe_account: anchor.web3.PublicKey
   let recipe_bump: number
+
+  let recipe_mint: anchor.web3.Keypair
+  let recipe_metadata_PDA: anchor.web3.PublicKey
+  let manager_recipe_ata: anchor.web3.PublicKey
+
+  let skin_mint: anchor.web3.Keypair
+  let skin_metadata_PDA: anchor.web3.PublicKey
+  let manager_skin_ata: anchor.web3.PublicKey
+
+/** ============================================================================================
+                I N I T I A L I Z E   
+    ============================================================================================  
+**/
 
   // TEST initialize
   it("Is initialized", async () => {
@@ -74,11 +84,16 @@ describe("craft_skins", () => {
       })
       .signers([manager])
       .rpc()
-      console.log(`${alien} Initialize transaction signature `, init_tx);
+      console.log(`${display.green}`,`${display.alien} Initialize transaction signature `, init_tx);
     } catch (err) {
-      console.log(`${bomb} initialize failed `, err)
+      console.log(`${display.red}`,`${display.bomb} initialize failed `, err)
     }
   }); // end initialize
+
+/** ============================================================================================
+            C R E A T E       R E C I P E   
+    ============================================================================================   
+**/
 
   /*
     TEST craft_recipe
@@ -105,12 +120,12 @@ describe("craft_skins", () => {
     let lamports = await Token.getMinBalanceRentForExemptMint(
       provider.connection
     );
-    const data = nft_data(manager.publicKey);
+    const data = recipe_nft_data(manager.publicKey);
     let [
-      recipe_mint, 
-      recipe_metadata_PDA, 
-      mint_tx,
-      manager_recipe_ata
+      new_recipe_mint, 
+      new_recipe_metadata_PDA, 
+      recipe_mint_tx,
+      new_manager_recipe_ata
     ] = await createMint(
         provider.connection,
         manager.publicKey, // authority
@@ -118,14 +133,17 @@ describe("craft_skins", () => {
         manager.publicKey, // destination (owner)
         lamports,
         data, // metadata account
-        nft_json_url // metadata URI
+        recipe_json_url // metadata URI
     );
+    recipe_mint = new_recipe_mint, // set as global variable
+    recipe_metadata_PDA = new_recipe_metadata_PDA, // set as global variable
+    manager_recipe_ata = new_manager_recipe_ata // set as global variable
     console.log('recipe_mint: ', recipe_mint.publicKey.toString())
     console.log('recipe_metadata_PDA: ', recipe_metadata_PDA.toString())
     console.log('manager_recipe_ata: ', manager_recipe_ata.toString())
 
-    let sig = await provider.sendAndConfirm(mint_tx, [recipe_mint, manager]);
-    console.log('mint signature: ', sig);
+    let recipeSig = await provider.sendAndConfirm(recipe_mint_tx, [recipe_mint, manager]);
+    console.log('mint recipe signature: ', recipeSig);
 
     /* 
       get PDA of Recipe account
@@ -167,30 +185,145 @@ describe("craft_skins", () => {
         })
         .signers([manager])
         .rpc()
-      console.log(`${unicorn} CreateRecipe transaction signature `, create_recipe_tx);
+      console.log(`${display.green}`,`${display.unicorn} CreateRecipe transaction signature `, create_recipe_tx);
 
       const created_recipe = await program.account.recipe.fetch(recipe_account);
-      console.log(` ${cherry} created recipe: `)
-      console.log(created_recipe.mints[0].toString());
-      console.log(created_recipe.amounts[0].toNumber())
+      console.log('\n')
+      console.log(` ${display.popcorn} VERIFY status of Recipe ...`);
+      console.log(`${display.cyan}`,'created recipe: ');
+      console.log('mints ', created_recipe.mints.toString());
+      console.log('amounts', created_recipe.amounts.map(num => num.toNumber()));
   
-      let metadata = await provider.connection.getAccountInfo(
+      let recipe_metadata = await provider.connection.getAccountInfo(
         recipe_metadata_PDA
       );
-      let info = MetadataData.deserialize(
-        metadata.data
+      let recipe_info = MetadataData.deserialize(
+        recipe_metadata.data
       );
   
-      console.log("recipe metadata? ", info.data.creators);
+      console.log(`${display.cyan}`,"recipe metadata ->")
+      console.log(recipe_info.data.creators);
   
       const created_recipe_token = await provider.connection.getParsedAccountInfo(
         manager_recipe_ata
       );
+      console.log(`${display.cyan}`,"recipe token -> ");
       //@ts-ignore
-      console.log("filled tokens? ", created_recipe_token.value.data.parsed.info);
+      console.log(created_recipe_token.value.data.parsed.info);
     } catch (err) {
-      console.log(`${bomb} create_recipe failed`, err)
+      console.log(`${display.red}`,`${display.bomb} create_recipe failed`, err);
     }
   }); // end createRecipe
+
+/** ============================================================================================
+                  A D D    S K I N   
+    ============================================================================================   
+**/
+  it("Add skin", async () => {
+  
+    /**
+      Get exisiting Recipe accounts
+    **/
+    const existing_recipe_account = await program.account.recipe.fetch(recipe_account); // created in createRecipe
+    console.log(`${display.cyan}`,'existing recipe: ');
+    console.log('mints ', existing_recipe_account.mints.toString());
+    console.log('amounts', existing_recipe_account.amounts.map(num => num.toNumber()));
+
+    // exisiting recipe_mint. Created in createRecipe
+    console.log('existing_recipe_mint: ', recipe_mint.publicKey.toString())
+    // get associated token account. Owned by manager, holds recipe mint
+    console.log('manager: ', manager.publicKey.toString())
+    //const existing_recipe_ata = await getATA(recipe_mint.publicKey, manager.publicKey)
+    const existing_recipe_ata = await Token.getAssociatedTokenAddress(
+      ASSOCIATED_TOKEN_PROGRAM_ID, // always associated token program id
+      TOKEN_PROGRAM_ID, // always token program id
+      recipe_mint.publicKey, // mint
+      manager.publicKey // token account destination/authority,
+    );
+    console.log('existing_recipe_ata: ', existing_recipe_ata.toString())
+    // get metadata account
+    const existing_recipe_metadata_pda = await getMetadataPDA(recipe_mint.publicKey)
+    console.log('existing_recipe_metadata_pda: ', existing_recipe_metadata_pda.toString())
+    
+    /**
+      init new Skin NFT accounts
+    **/
+    let lamports = await Token.getMinBalanceRentForExemptMint(
+      provider.connection
+    );
+    const data = skin_nft_data(manager.publicKey);
+    let [
+        skin_mint, 
+        skin_metadata_PDA, 
+        skin_mint_tx,
+        manager_skin_ata
+      ] = await createMint(
+          provider.connection,
+          manager.publicKey, // authority
+          provider.wallet.publicKey, // payer
+          manager.publicKey, // destination (owner)
+          lamports,
+          data, // metadata account
+          skin_json_url // metadata URI
+      );
+      console.log('skin_mint: ', skin_mint.publicKey.toString())
+      console.log('skin_metadata: ', skin_metadata_PDA.toString())
+      console.log('manager_skin_ata: ', manager_skin_ata.toString())
+  
+      let skinSig = await provider.sendAndConfirm(skin_mint_tx, [skin_mint, manager]);
+      console.log('mint skin signature: ', skinSig);
+
+
+    // call anchor program add_skin
+    try {
+      const add_skin_tx = await program.methods.addSkin(
+        program_manager_bump, recipe_bump
+        )
+        .accounts({
+          owner: manager.publicKey,
+          programManager: program_manager_acc,
+          recipe: recipe_account,
+          recipeTokenAccount: manager_recipe_ata,
+          recipeMint: recipe_mint.publicKey,
+          recipeMetadata: recipe_metadata_PDA,
+          skinTokenAccount: manager_skin_ata,
+          skinMint: skin_mint.publicKey,
+          skinMetadata: skin_metadata_PDA,
+          rentAccount: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId
+        })
+        .signers([manager])
+        .rpc()
+      console.log(`${display.green}`,`${display.octopus} AddSkin transaction signature `, add_skin_tx);
+
+      const created_recipe = await program.account.recipe.fetch(recipe_account);
+      console.log('\n')
+      console.log(` ${display.popcorn} VERIFY status of Skin ...`);
+      console.log(`${display.cyan}`,'existing recipe: ');
+      console.log('mints ', created_recipe.mints.toString());
+      console.log('amounts', created_recipe.amounts.map(num => num.toNumber()));
+  
+      let skin_metadata = await provider.connection.getAccountInfo(
+        skin_metadata_PDA
+      );
+      let skin_info = MetadataData.deserialize(
+        skin_metadata.data
+      );
+  
+      console.log(`${display.cyan}`,"skin metadata ->")
+      console.log(skin_info.data.creators);
+  
+      let skin_token = await provider.connection.getParsedAccountInfo(
+        manager_recipe_ata
+      );
+      console.log(`${display.cyan}`,"skin token -> ");
+      //@ts-ignore
+      console.log(skin_token.value.data.parsed.info);
+    } catch (err) {
+      console.log(`${display.red}`,`${display.bomb} add_skin failed`, err);
+    }
+  }); // end addSkin
 
 });

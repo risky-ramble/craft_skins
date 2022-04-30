@@ -95,22 +95,11 @@ export const createMint = async (
     return [ mint, metadataPDA, tx, ata ];
 }
 
-
-export const getMasterEdition = async (
-    mint: anchor.web3.PublicKey
-  ): Promise<anchor.web3.PublicKey> => {
-    return (
-      await anchor.web3.PublicKey.findProgramAddress(
-        [
-          Buffer.from("metadata"),
-          TOKEN_METADATA_PROGRAM_ID.toBuffer(),
-          mint.toBuffer(),
-          Buffer.from("edition"),
-        ],
-        TOKEN_METADATA_PROGRAM_ID
-      )
-    )[0];
-};
+export const getMetadataPDA = async (  
+  mint: anchor.web3.PublicKey
+): Promise<anchor.web3.PublicKey> => {
+  return await Metadata.getPDA(mint)
+}
 
 
 export async function getMetadataData(
@@ -119,4 +108,20 @@ export async function getMetadataData(
 ): Promise<MetadataData> {
     const metadataAccount = await connection.getAccountInfo(metadata);
     return MetadataData.deserialize(metadataAccount.data);
+};
+
+export const getMasterEdition = async (
+  mint: anchor.web3.PublicKey
+): Promise<anchor.web3.PublicKey> => {
+  return (
+    await anchor.web3.PublicKey.findProgramAddress(
+      [
+        Buffer.from("metadata"),
+        TOKEN_METADATA_PROGRAM_ID.toBuffer(),
+        mint.toBuffer(),
+        Buffer.from("edition"),
+      ],
+      TOKEN_METADATA_PROGRAM_ID
+    )
+  )[0];
 };

@@ -46,7 +46,7 @@ pub fn verify_recipe_nft<'info, 'a>(
     if recipe_metadata.data_is_empty() {
         return Err(ErrorCode::NotInitialized.into());
     };
-    msg!("recipe_metadata account init :)");
+    msg!("recipe_metadata account init");
     // check owner is creator/signer for metadata account
     let metadata_account = Metadata::from_account_info(&recipe_metadata)?;
     let creators_found = metadata_account.data.creators.clone().unwrap();
@@ -54,7 +54,7 @@ pub fn verify_recipe_nft<'info, 'a>(
         .iter()
         .find(|c| c.verified && c.address == owner.key())
         .unwrap();
-    msg!("Metadata creators validated :)");
+    msg!("Metadata creators validated");
 
     // all tests passed!
     Ok(())
