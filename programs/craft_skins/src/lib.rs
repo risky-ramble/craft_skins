@@ -47,13 +47,13 @@ pub mod craft_skins {
         msg!("Done recipe iter");
 
         // validate accounts to create Recipe NFT
-        verify_recipe_nft(
+        verify_nft(
             &ctx.accounts.recipe_token_account, // token account holds everything
             &ctx.accounts.recipe_mint,          // mint is address
             &ctx.accounts.recipe_metadata,      // metadata is specific data, Metaplex standard
             &ctx.accounts.owner,                // owner of Recipe NFT
         )?;
-        msg!("Done verify_recipe_nft");
+        msg!("Done verify recipe NFT");
 
         Ok(())
     }
@@ -65,13 +65,13 @@ pub mod craft_skins {
         recipe_bump: u8,
     ) -> Result<()> {
         // validate accounts to create Recipe NFT
-        verify_recipe_nft(
-            &ctx.accounts.recipe_token_account, // token account holds everything
-            &ctx.accounts.recipe_mint,          // mint is address
-            &ctx.accounts.recipe_metadata,      // metadata is specific data, Metaplex standard
-            &ctx.accounts.owner,                // owner of Recipe NFT
+        verify_nft(
+            &ctx.accounts.skin_token_account, // token account holds everything
+            &ctx.accounts.skin_mint,          // mint is address
+            &ctx.accounts.skin_metadata,      // metadata is specific data, Metaplex standard
+            &ctx.accounts.owner,              // owner of Recipe NFT
         )?;
-        msg!("Done verify_recipe_nft");
+        msg!("Done verify skin NFT");
 
         Ok(())
     }
