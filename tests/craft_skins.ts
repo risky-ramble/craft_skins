@@ -16,7 +16,8 @@ import {
   createSkin,
   getMasterEdition,
   getMetadata,
-  verifySkinCollection
+  verifySkinCollection,
+  getRecipeAccount
 } from './utils/utils'
 import {
   recipe_nft_data,
@@ -141,8 +142,8 @@ describe("craft_skins", () => {
       }
       seeds for recipe PDA defined in CreateRecipe.recipe in lib.rs
     */
-    [recipe_account, recipe_bump] = await anchor.web3.PublicKey.findProgramAddress(
-      [Buffer.from("recipe"), recipe_mint.publicKey.toBuffer()],
+    [recipe_account, recipe_bump] = await getRecipeAccount(
+      recipe_mint.publicKey,
       program.programId
     );
     console.log('recipe_account: ', recipe_account.toString())
@@ -187,8 +188,8 @@ describe("craft_skins", () => {
         recipe_metadata.data
       );
   
-      console.log("recipe metadata ->")
-      console.log(recipe_info);
+      console.log("recipe metadata data ->")
+      console.log(recipe_info.data);
   
       const created_recipe_token = await provider.connection.getParsedAccountInfo(
         recipe_ata
@@ -206,30 +207,6 @@ describe("craft_skins", () => {
     ============================================================================================   
 **/
   it("Add skin", async () => {
-  
-    /**
-      Get exisiting Recipe accounts
-    **/
-    const existing_recipe_account = await program.account.recipe.fetch(recipe_account); // created in createRecipe
-    console.log('existing recipe: ');
-    console.log('mints ', existing_recipe_account.mints.toString());
-    console.log('amounts', existing_recipe_account.amounts.map(num => num.toNumber()));
-
-    // exisiting recipe_mint. Created in createRecipe
-    console.log('existing_recipe_mint: ', recipe_mint.publicKey.toString())
-
-    const existing_recipe_ata = await Token.getAssociatedTokenAddress(
-      ASSOCIATED_TOKEN_PROGRAM_ID, // always associated token program id
-      TOKEN_PROGRAM_ID, // always token program id
-      recipe_mint.publicKey, // mint
-      provider.wallet.publicKey // token account destination/authority,
-    );
-    console.log('existing_recipe_ata: ', existing_recipe_ata.toString())
-    // get metadata account
-    const existing_recipe_metadata_pda = await getMetadata(recipe_mint.publicKey)
-    console.log('existing_recipe_metadata_pda: ', existing_recipe_metadata_pda.toString())
-    const existing_recipe_master_edition = await getMasterEdition(recipe_mint.publicKey);
-    console.log('existing_recipe_master_edition: ', existing_recipe_master_edition.toString())
     
     // init new Skin NFT
     let lamports = await Token.getMinBalanceRentForExemptMint(
@@ -262,21 +239,17 @@ describe("craft_skins", () => {
     console.log('mint skin signature: ', skinSig);
 
     // verify collection/recipe of skin
-    try {
-      const verify_collection = await verifySkinCollection(
-        skin_metadata_PDA, // metadata
-        provider.wallet.publicKey, // collectionAuthority
-        provider.wallet.publicKey, // payer
-        recipe_mint.publicKey, // collectionMint
-      );
-      let verifyTx = new anchor.web3.Transaction({ feePayer: provider.wallet.publicKey });
-      verifyTx.add(verify_collection)
+    const verify_collection = await verifySkinCollection(
+      skin_metadata_PDA, // metadata
+      provider.wallet.publicKey, // collectionAuthority
+      provider.wallet.publicKey, // payer
+      recipe_mint.publicKey, // collectionMint
+    );
+    let verifyTx = new anchor.web3.Transaction({ feePayer: provider.wallet.publicKey });
+    verifyTx.add(verify_collection)
           
-      let verifySig = await provider.sendAndConfirm(verifyTx, []);
-      console.log('verify collection signature: ', verifySig);
-    } catch (err) {
-      console.log('failed to verify collection: ', err)
-    }
+    let verifySig = await provider.sendAndConfirm(verifyTx, []);
+    console.log('verify collection signature: ', verifySig);
 
 
     // call anchor program add_skin
@@ -319,12 +292,25 @@ describe("craft_skins", () => {
       console.log("skin metadata ->")
       console.log(skin_info);
   
-      let skin_token = await provider.connection.getParsedAccountInfo(
-        skin_ata
-      );
-      console.log("skin token -> ");
-      //@ts-ignore
-      console.log(skin_token.value.data.parsed.info);
+      let recover_collection_key: PublicKey = new PublicKey(skin_info.collection.key);
+      console.log('recover collection: ', recover_collection_key.toString())
+
+      let [collection_recipe_account, _] = await getRecipeAccount(recover_collection_key, program.programId);
+      console.log('collection_recipe: ', collection_recipe_account.toString())
+
+      console.log("skin recipe == created recipe? -> ");
+      // recipe found from skin.metadata.collection
+      let found_recipe = await program.account.recipe.fetch(collection_recipe_account);
+      // recipe created in CreateRecipe
+      let correct_recipe = await program.account.recipe.fetch(recipe_account)
+      // check skin recipe is the correct recipe?
+      let skinIngredientMints = found_recipe.mints.map(mint => mint.toString());
+      let skinIngredientAmounts = found_recipe.amounts.map(amount => amount.toNumber());
+      let recipeIngredientMints = correct_recipe.mints.map(mint => mint.toString());
+      let recipeIngredientAmounts = correct_recipe.amounts.map(amount => amount.toNumber());
+      console.log(skinIngredientMints, ' == ', recipeIngredientMints)
+      console.log(skinIngredientAmounts, ' == ', recipeIngredientAmounts)
+
     } catch (err) {
       console.log(`${display.red}`,`${display.bomb} add_skin failed`, err);
     }

@@ -17,11 +17,13 @@ import {
   DataV2,
   createCreateMasterEditionV3Instruction,
   createVerifyCollectionInstruction,
-  VerifyCollectionInstructionAccounts
+  VerifyCollectionInstructionAccounts,
+  TokenStandard,
+  ApproveCollectionAuthorityInstructionAccounts
 } from "@metaplex-foundation/mpl-token-metadata";
 import { BN } from "bn.js";
 const Transaction = programs.core.Transaction;
-const { metadata: { MetadataData, MetadataProgram, MasterEdition } } = programs;
+const { metadata: { MetadataProgram, MasterEdition } } = programs;
 
 
 export async function createRecipe(
@@ -327,3 +329,18 @@ export const getMetadata = async (
     )
   )[0];
 };
+
+export const getRecipeAccount = async (
+  recipe_mint: anchor.web3.PublicKey,
+  programId: anchor.web3.PublicKey
+): Promise<[anchor.web3.PublicKey, number]> => {
+  return (
+    await anchor.web3.PublicKey.findProgramAddress(
+      [
+        Buffer.from("recipe"), 
+        recipe_mint.toBuffer()
+      ],
+      programId
+    )
+  );
+}
