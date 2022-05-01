@@ -16,6 +16,7 @@ import {
   createSkin,
   getMasterEdition,
   getMetadata,
+  verifySkinCollection
 } from './utils/utils'
 import {
   recipe_nft_data,
@@ -23,13 +24,9 @@ import {
   skin_data,
   skin_json_url
 } from "./data/data";
-import {
-  Metadata
-} from "@metaplex-foundation/mpl-token-metadata";
+import { Metadata } from "@metaplex-foundation/mpl-token-metadata";
 import { programs } from "@metaplex/js";
-const {
-  metadata: { MetadataData, DataV2 },
-} = programs;
+const { metadata: { MetadataData, MetadataProgram } } = programs;
 
 // Configure the client to use the local cluster
 let provider = anchor.AnchorProvider.env()
@@ -234,9 +231,7 @@ describe("craft_skins", () => {
     const existing_recipe_master_edition = await getMasterEdition(recipe_mint.publicKey);
     console.log('existing_recipe_master_edition: ', existing_recipe_master_edition.toString())
     
-    /**
-      init new Skin NFT accounts
-    **/
+    // init new Skin NFT
     let lamports = await Token.getMinBalanceRentForExemptMint(
       provider.connection
     );
@@ -254,7 +249,7 @@ describe("craft_skins", () => {
         data, // metadata account
         skin_json_url // metadata URI
     );
-
+    // confirm skin NFT accounts were created
     skin_mint = new_skin_mint
     skin_metadata_PDA = new_skin_metadata_PDA
     skin_ata = new_skin_ata
@@ -262,10 +257,27 @@ describe("craft_skins", () => {
     console.log('skin_metadata: ', skin_metadata_PDA.toString())
     console.log('manager_skin_ata: ', skin_ata.toString())
     console.log('collection mint: ', recipe_mint.publicKey.toString())
-    //console.log('skin_mint_tx: ', skin_mint_tx)
 
     let skinSig = await provider.sendAndConfirm(skin_mint_tx, [skin_mint]);
     console.log('mint skin signature: ', skinSig);
+
+    // verify collection/recipe of skin
+    try {
+      const verify_collection = await verifySkinCollection(
+        skin_metadata_PDA, // metadata
+        provider.wallet.publicKey, // collectionAuthority
+        provider.wallet.publicKey, // payer
+        recipe_mint.publicKey, // collectionMint
+      );
+      let verifyTx = new anchor.web3.Transaction({ feePayer: provider.wallet.publicKey });
+      verifyTx.add(verify_collection)
+          
+      let verifySig = await provider.sendAndConfirm(verifyTx, []);
+      console.log('verify collection signature: ', verifySig);
+    } catch (err) {
+      console.log('failed to verify collection: ', err)
+    }
+
 
     // call anchor program add_skin
     try {

@@ -11,19 +11,18 @@ import {
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { TOKEN_METADATA_PROGRAM_ID } from '../data/constants'
+import { Token } from "@solana/spl-token";
 import {
   createCreateMetadataAccountV2Instruction,
   DataV2,
-  Collection,
   createCreateMasterEditionV3Instruction,
   createVerifyCollectionInstruction,
   VerifyCollectionInstructionAccounts
 } from "@metaplex-foundation/mpl-token-metadata";
-
-import { Token } from "@solana/spl-token";
-const { MetadataProgram, Metadata} =
-  programs.metadata;
+import { BN } from "bn.js";
 const Transaction = programs.core.Transaction;
+const { metadata: { MetadataData, MetadataProgram, MasterEdition } } = programs;
+
 
 export async function createRecipe(
   fee_payer: PublicKey,
@@ -76,7 +75,8 @@ export async function createRecipe(
     )
   );
 
-  let [metadata_instruction, metadataPDA] = await createRecipeMetadata(
+  const metadata = await programs.metadata.Metadata.getPDA(mint.publicKey);
+  let metadata_instruction = await createRecipeMetadata(
     mint.publicKey,
     recipe_json_url,
     data,
@@ -84,52 +84,51 @@ export async function createRecipe(
   );
   tx.add(metadata_instruction)
 
-  const masterAccount = await getMasterEdition(mint.publicKey);
-  /*
-  const masterEdTX = new programs.metadata.CreateMasterEditionV3(
-    { feePayer: fee_payer },
-    {
-      edition: masterAccount,
-      metadata: metadataPDA,
-      updateAuthority: fee_payer,
-      mint: mint.publicKey,
-      mintAuthority: fee_payer,
-    }
-  );
-  */
-  const master_edition_instruction = createCreateMasterEditionV3Instruction(
-    {
-      edition: masterAccount,
-      mint: mint.publicKey,
-      updateAuthority: fee_payer,
-      mintAuthority: fee_payer,
-      payer: fee_payer,
-      metadata: metadataPDA
-    },
-    {
-      createMasterEditionArgs: {maxSupply: null}
-    }
-
+  const edition = await getMasterEdition(mint.publicKey);
+  const master_edition_instruction = await createRecipeMasterEdition(
+    edition,
+    mint.publicKey,
+    fee_payer
   );
   tx.add(master_edition_instruction)
 
-  return [mint, metadataPDA, tx, ata];
+  return [mint, metadata, tx, ata];
+}
+
+export const createRecipeMasterEdition = async (
+  edition: PublicKey,
+  mint: PublicKey,
+  feePayer: PublicKey
+): Promise<programs.metadata.CreateMasterEditionV3> => {
+  const metadata = await programs.metadata.Metadata.getPDA(mint)
+  const master_edition_instruction = new programs.metadata.CreateMasterEditionV3(
+    {feePayer: feePayer},
+    {
+      edition: edition,
+      metadata: metadata,
+      updateAuthority: feePayer,
+      mint: mint,
+      mintAuthority: feePayer,
+      maxSupply: new BN(0)
+    }
+  );
+  return master_edition_instruction
 }
 
 export const createRecipeMetadata = async (
   mintKey: anchor.web3.PublicKey,
   uri: string,
-  metadata: any,
+  info: any,
   creator: anchor.web3.PublicKey,
-): Promise<[anchor.web3.TransactionInstruction, anchor.web3.PublicKey]> => {
+): Promise<anchor.web3.TransactionInstruction> => {
   // Retrieve metadata
-  const metadataAccount = await Metadata.getPDA(mintKey);
+  const metadata = await programs.metadata.Metadata.getPDA(mintKey);
 
   let data: DataV2 = {
-    name: metadata.name,
-    symbol: metadata.symbol,
+    name: info.name,
+    symbol: info.symbol,
     uri: uri,
-    sellerFeeBasisPoints: metadata.seller_fee_basis_points,
+    sellerFeeBasisPoints: info.seller_fee_basis_points,
     creators: [
       {
         address: creator,
@@ -141,9 +140,9 @@ export const createRecipeMetadata = async (
     uses: null,
   }
   
-  const instructions = createCreateMetadataAccountV2Instruction(
+  const instruction = createCreateMetadataAccountV2Instruction(
     {
-      metadata: metadataAccount,
+      metadata,
       mint: mintKey,
       mintAuthority: creator,
       payer: creator,
@@ -152,7 +151,7 @@ export const createRecipeMetadata = async (
     { createMetadataAccountArgsV2: {data, isMutable: true} }
   );
 
-  return [instructions, metadataAccount];
+  return instruction;
 };
 
 
@@ -210,7 +209,7 @@ export async function createSkin(
 
 
   // create metadata account
-  const metadataPDA = await Metadata.getPDA(mint.publicKey)
+  const metadataPDA = await programs.metadata.Metadata.getPDA(mint.publicKey)
   let metadata_instruction = await createSkinMetadata(
     mint.publicKey,
     skin_json_url,
@@ -220,19 +219,6 @@ export async function createSkin(
   );
   tx.add(metadata_instruction)
 
-  // verify collection here
-  const recipe_edition = await getMasterEdition(collection_mint);
-  const recipe_metadata = await Metadata.getPDA(collection_mint);
-  const verify_collection_instruction = await verifySkinCollection(
-    metadataPDA, // metadata
-    fee_payer, // collectionAuthority
-    fee_payer, // payer
-    collection_mint, // collectionMint
-    recipe_metadata, // collection
-    recipe_edition // collectionMasterEditionAccount
-  );
-  //tx.add(verify_collection_instruction)
-
 
   return [mint, metadataPDA, tx, ata];
 }
@@ -240,17 +226,17 @@ export async function createSkin(
 export const createSkinMetadata = async (
   mintKey: anchor.web3.PublicKey,
   uri: string,
-  metadata: any,
+  info: any,
   creator: anchor.web3.PublicKey,
   collection: anchor.web3.PublicKey
 ): Promise<anchor.web3.TransactionInstruction> => {
   // Retrieve metadata
-  const metadataAccount = await Metadata.getPDA(mintKey);
+  const metadata = await programs.metadata.Metadata.getPDA(mintKey);
   let data: DataV2 = {
-    name: metadata.name,
-    symbol: metadata.symbol,
+    name: info.name,
+    symbol: info.symbol,
     uri: uri,
-    sellerFeeBasisPoints: metadata.seller_fee_basis_points,
+    sellerFeeBasisPoints: info.seller_fee_basis_points,
     creators: [
       {
         address: creator,
@@ -264,14 +250,13 @@ export const createSkinMetadata = async (
 
   const instruction = createCreateMetadataAccountV2Instruction(
     {
-      metadata: metadataAccount,
+      metadata,
       mint: mintKey,
       mintAuthority: creator,
       payer: creator,
       updateAuthority: creator,
     },
-    { createMetadataAccountArgsV2: {data, isMutable: true}
-    }
+    { createMetadataAccountArgsV2: {data: data, isMutable: true} }
   );
 
   return instruction;
@@ -282,18 +267,33 @@ export const verifySkinCollection = async (
   collectionAuthority: PublicKey,
   payer: PublicKey,
   collectionMint: PublicKey,
-  collection: PublicKey,
-  collectionMasterEditionAccount: PublicKey
-): Promise<anchor.web3.TransactionInstruction> => {
+): Promise<programs.metadata.VerifyCollection> => {
+  const collectionMasterEdition = await MasterEdition.getPDA(collectionMint)
+  const collectionMetadata = await programs.metadata.Metadata.getPDA(collectionMint);
+
+  /*
   let params: VerifyCollectionInstructionAccounts = {
     metadata: metadata,
     collectionAuthority: collectionAuthority,
     payer: payer,
     collectionMint: collectionMint,
-    collection: collection,
-    collectionMasterEditionAccount: collectionMasterEditionAccount   
+    collection: collectionMetadata,
+    collectionMasterEditionAccount: collectionMasterEdition   
   }
   return createVerifyCollectionInstruction(params);
+  */
+  //   verify collection here
+  const collectionTX = new programs.metadata.VerifyCollection(
+    { feePayer: payer },
+    {
+      metadata: metadata,
+      collectionAuthority: collectionAuthority,
+      collectionMint: collectionMint,
+      collectionMetadata: collectionMetadata,
+      collectionMasterEdition: collectionMasterEdition,
+    }
+  );
+  return collectionTX;
 }
 
 //run program instruction after metadata creation takes in current iou and size
