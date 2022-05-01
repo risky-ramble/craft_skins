@@ -21,17 +21,17 @@ pub fn verify_nft<'info, 'a>(
     let token: spl_token::state::Account = assert_initialized(token_info)?;
     // check token account is owned by Solana SPL Token Program
     assert_owned_by(token_info, &SPL_TOKEN_ID)?;
-    // check owner of token = param given to program
+    // check owner of token = owner param given to program
     assert_eq!(token.owner, owner.key());
-    // check token account has a balance
-    if token.amount < 1 {
-        return Err(ErrorCode::TokenAmountInsufficient.into());
+    // check token account has a balance (skin == amount of 1)
+    if token.amount != 1 {
+        return Err(ErrorCode::TokenAmountInvalid.into());
     }
     // check token account's mint is mint account passed to program
     if token.mint != mint.key() {
         return Err(ErrorCode::TokenMintInvalid.into());
     }
-    // check metadata PDA was derived correctly (seeds are correct)
+    // check metadata PDA was derived correctly
     assert_derivation(
         &metaplex_token_metadata::id(), // TOKEN_METADATA_PROGRAM_ID
         metadata,                       // metadata account derived
@@ -60,15 +60,41 @@ pub fn verify_nft<'info, 'a>(
     Ok(())
 }
 
+/*
+    recipe_account is a PDA of seeds
+    => ["recipe", recipe_mint], this.programId
+    check recipe_account address == result of PDA
+*/
+pub fn verify_recipe_pda<'info, 'a>(
+    recipe_account: &Account<'info, Recipe>,
+    program_id: &Pubkey,
+    seeds: &[&[u8]],
+) -> Result<bool> {
+    // derive recipe account PDA
+    let (key, _) = Pubkey::find_program_address(&seeds, program_id);
+
+    // if recipe_account doesn't match correct PDA, throw error
+    if key != recipe_account.key() {
+        return Err(ErrorCode::DerivedKeyInvalid.into());
+    }
+    Ok(true)
+}
+
+#[account]
+pub struct Recipe {
+    pub mints: Vec<Pubkey>,
+    pub amounts: Vec<u64>,
+}
+
 #[error_code]
 pub enum ErrorCode {
-    #[msg("Token account requires balance > 0 :(")]
-    TokenAmountInsufficient,
+    #[msg("Token account requires balance of 1")]
+    TokenAmountInvalid,
 
-    #[msg("Token account mint != mint account :(")]
+    #[msg("Token account mint != mint account")]
     TokenMintInvalid,
 
-    #[msg("Metadata account not initialized :(")]
+    #[msg("Metadata account not initialized")]
     NotInitialized,
 
     #[msg("Wrong creators or already signed for program signer")]
@@ -77,6 +103,6 @@ pub enum ErrorCode {
     #[msg("Not enough tokens")]
     NotEnoughToken,
 
-    #[msg("Derived key is invalid for escrow account")]
+    #[msg("Derived key is invalid recipe account")]
     DerivedKeyInvalid,
 }

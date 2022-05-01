@@ -60,23 +60,45 @@ pub mod craft_skins {
     }
 
     /**
-      validate recipe accounts
-      validate skin accounts
-      validate Collection in metadata is recipe
+      validate skin accounts (mint, metadata, verified collection in metadata)
+      validate recipe accounts (mint, metadata, master edition)
+      validate Collection mint can derive Recipe PDA
+      validate Recipe PDA is init and owned by admin
     **/
-    pub fn add_skin(
+    pub fn add_skin<'info>(
         // CreateRecipe contains accounts to init Recipe NFT
         ctx: Context<AddSkin>,
         recipe_bump: u8,
     ) -> Result<()> {
-        // validate accounts to create Recipe NFT
+        // validate accounts to create Skin NFT
         verify_nft(
             &ctx.accounts.skin_token_account, // token account holds everything
             &ctx.accounts.skin_mint,          // mint is address
             &ctx.accounts.skin_metadata,      // metadata is specific data, Metaplex standard
             &ctx.accounts.owner,              // owner of Recipe NFT
         )?;
-        msg!("Done verify skin NFT");
+        msg!("Done verify skin");
+
+        // validate accounts for exisiting Recipe NFT
+        verify_nft(
+            &ctx.accounts.recipe_token_account,
+            &ctx.accounts.recipe_mint,
+            &ctx.accounts.recipe_metadata,
+            &ctx.accounts.owner,
+        )?;
+        msg!("Done verify skin recipe");
+
+        // validate recipe_account is correct PDA (address)
+        let is_valid_recipe = verify_recipe_pda(
+            &ctx.accounts.recipe,
+            &ctx.program_id,
+            &[b"recipe", &ctx.accounts.recipe_mint.key().as_ref()],
+        )
+        .unwrap();
+
+        if is_valid_recipe {
+            msg!("Recipe is valid")
+        }
 
         Ok(())
     }
@@ -177,11 +199,13 @@ pub struct CreateRecipe<'info> {
     All skins within Recipe have the same ingredients
     Ingredients are exchanged for a skin from this class
 */
+/*
 #[account]
 pub struct Recipe {
     pub mints: Vec<Pubkey>,
     pub amounts: Vec<u64>,
 }
+*/
 
 /*
     validate necessary NFT accounts
@@ -192,7 +216,6 @@ pub struct Recipe {
       init
       owned by program?
     create skin with recipe as Collection
-
 */
 #[derive(Accounts)]
 #[instruction(recipe_bump: u8)]
