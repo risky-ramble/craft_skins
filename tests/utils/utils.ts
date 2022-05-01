@@ -15,11 +15,7 @@ import { Token } from "@solana/spl-token";
 import {
   createCreateMetadataAccountV2Instruction,
   DataV2,
-  createCreateMasterEditionV3Instruction,
   createVerifyCollectionInstruction,
-  VerifyCollectionInstructionAccounts,
-  TokenStandard,
-  ApproveCollectionAuthorityInstructionAccounts
 } from "@metaplex-foundation/mpl-token-metadata";
 import { BN } from "bn.js";
 const Transaction = programs.core.Transaction;
@@ -32,7 +28,7 @@ export async function createRecipe(
   lamports,
   data,
   recipe_json_url
-): Promise<[Keypair, PublicKey, programs.core.Transaction, PublicKey]> {
+): Promise<[Keypair, PublicKey, programs.core.Transaction, PublicKey, PublicKey]> {
   const mint = Keypair.generate();
   const tx = new Transaction({ feePayer: fee_payer });
   let ata = await Token.getAssociatedTokenAddress(
@@ -94,7 +90,7 @@ export async function createRecipe(
   );
   tx.add(master_edition_instruction)
 
-  return [mint, metadata, tx, ata];
+  return [mint, metadata, tx, ata, edition];
 }
 
 export const createRecipeMasterEdition = async (
@@ -273,18 +269,6 @@ export const verifySkinCollection = async (
   const collectionMasterEdition = await MasterEdition.getPDA(collectionMint)
   const collectionMetadata = await programs.metadata.Metadata.getPDA(collectionMint);
 
-  /*
-  let params: VerifyCollectionInstructionAccounts = {
-    metadata: metadata,
-    collectionAuthority: collectionAuthority,
-    payer: payer,
-    collectionMint: collectionMint,
-    collection: collectionMetadata,
-    collectionMasterEditionAccount: collectionMasterEdition   
-  }
-  return createVerifyCollectionInstruction(params);
-  */
-  //   verify collection here
   const collectionTX = new programs.metadata.VerifyCollection(
     { feePayer: payer },
     {

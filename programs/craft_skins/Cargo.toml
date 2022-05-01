@@ -21,7 +21,6 @@ overflow-checks = true
 [dependencies]
 anchor-lang = "0.24.2"
 anchor-spl = "0.24.2"
-metaplex-token-metadata = { git = "https://github.com/metaplex-foundation/metaplex", rev = "8a69c0d01708b9bbd9cf34fd11bd57669773083d", features = [
-    "no-entrypoint",
-] }
-spl-token = "3.3.0"
+spl-token = "~3.2.0"
+log = "0.4"
+mpl-token-metadata = { version = "1.2.7", features = [ "no-entrypoint" ] }

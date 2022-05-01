@@ -14,8 +14,6 @@ import * as display from './utils/display'
 import {
   createRecipe,
   createSkin,
-  getMasterEdition,
-  getMetadata,
   verifySkinCollection,
   getRecipeAccount
 } from './utils/utils'
@@ -51,6 +49,7 @@ describe("craft_skins", () => {
   let recipe_mint: anchor.web3.Keypair
   let recipe_metadata_PDA: anchor.web3.PublicKey
   let recipe_ata: anchor.web3.PublicKey
+  let recipe_master_edition: anchor.web3.PublicKey
 
   let skin_mint: anchor.web3.Keypair
   let skin_metadata_PDA: anchor.web3.PublicKey
@@ -115,7 +114,8 @@ describe("craft_skins", () => {
       new_recipe_mint, 
       new_recipe_metadata_PDA, 
       recipe_mint_tx,
-      new_recipe_ata
+      new_recipe_ata,
+      new_recipe_master_edition
     ] = await createRecipe(
       provider.wallet.publicKey, // authority/payer
       provider.wallet.publicKey, // destination (owner)
@@ -126,9 +126,11 @@ describe("craft_skins", () => {
     recipe_mint = new_recipe_mint, // set as global variable
     recipe_metadata_PDA = new_recipe_metadata_PDA, // set as global variable
     recipe_ata = new_recipe_ata // set as global variable
+    recipe_master_edition = new_recipe_master_edition
     console.log('recipe_mint: ', recipe_mint.publicKey.toString())
     console.log('recipe_metadata_PDA: ', recipe_metadata_PDA.toString())
     console.log('recipe_ata: ', recipe_ata.toString())
+    console.log('recipe_master_edition: ', recipe_master_edition.toString())
 
     let recipeSig = await provider.sendAndConfirm(recipe_mint_tx, [recipe_mint]);
     console.log('mint recipe signature: ', recipeSig);
@@ -165,6 +167,7 @@ describe("craft_skins", () => {
           recipeTokenAccount: recipe_ata,
           recipeMint: recipe_mint.publicKey,
           recipeMetadata: recipe_metadata_PDA,
+          recipeMasterEdition: recipe_master_edition,
           rentAccount: anchor.web3.SYSVAR_RENT_PUBKEY,
           tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
           tokenProgram: TOKEN_PROGRAM_ID,
@@ -232,7 +235,7 @@ describe("craft_skins", () => {
     skin_ata = new_skin_ata
     console.log('skin_mint: ', skin_mint.publicKey.toString())
     console.log('skin_metadata: ', skin_metadata_PDA.toString())
-    console.log('manager_skin_ata: ', skin_ata.toString())
+    console.log('skin_ata: ', skin_ata.toString())
     console.log('collection mint: ', recipe_mint.publicKey.toString())
 
     let skinSig = await provider.sendAndConfirm(skin_mint_tx, [skin_mint]);
@@ -263,6 +266,7 @@ describe("craft_skins", () => {
           recipeTokenAccount: recipe_ata,
           recipeMint: recipe_mint.publicKey,
           recipeMetadata: recipe_metadata_PDA,
+          recipeMasterEdition: recipe_master_edition,
           skinTokenAccount: skin_ata,
           skinMint: skin_mint.publicKey,
           skinMetadata: skin_metadata_PDA,

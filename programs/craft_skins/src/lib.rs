@@ -2,10 +2,11 @@ use anchor_lang::prelude::*;
 use anchor_lang::AccountsClose;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, ID as SPL_TOKEN_ID};
-use metaplex_token_metadata::state::PREFIX as METAPLEX_PREFIX;
-use metaplex_token_metadata::state::{Creator, Metadata};
-use metaplex_token_metadata::utils::assert_derivation;
+use mpl_token_metadata::state::PREFIX as METAPLEX_PREFIX;
+use mpl_token_metadata::state::{Creator, Metadata};
+use mpl_token_metadata::utils::assert_derivation;
 use std::str::FromStr;
+
 pub mod utils;
 use utils::*;
 
@@ -46,15 +47,14 @@ pub mod craft_skins {
         msg!("Done recipe iter");
 
         // validate accounts to create Recipe NFT
-        verify_nft(
+        verify_recipe_nft(
             &ctx.accounts.recipe_token_account, // token account holds everything
             &ctx.accounts.recipe_mint,          // mint is address
             &ctx.accounts.recipe_metadata,      // metadata is specific data, Metaplex standard
-            &ctx.accounts.owner,                // owner of Recipe NFT
+            &ctx.accounts.recipe_master_edition,
+            &ctx.accounts.owner, // owner of Recipe NFT
         )?;
         msg!("Done verify recipe NFT");
-
-        // add verify_collection to make NFT a valid Collection
 
         Ok(())
     }
@@ -71,7 +71,7 @@ pub mod craft_skins {
         recipe_bump: u8,
     ) -> Result<()> {
         // validate accounts to create Skin NFT
-        verify_nft(
+        verify_skin_nft(
             &ctx.accounts.skin_token_account, // token account holds everything
             &ctx.accounts.skin_mint,          // mint is address
             &ctx.accounts.skin_metadata,      // metadata is specific data, Metaplex standard
@@ -80,10 +80,11 @@ pub mod craft_skins {
         msg!("Done verify skin");
 
         // validate accounts for exisiting Recipe NFT
-        verify_nft(
+        verify_recipe_nft(
             &ctx.accounts.recipe_token_account,
             &ctx.accounts.recipe_mint,
             &ctx.accounts.recipe_metadata,
+            &ctx.accounts.recipe_master_edition,
             &ctx.accounts.owner,
         )?;
         msg!("Done verify skin recipe");
@@ -98,6 +99,15 @@ pub mod craft_skins {
 
         if is_valid_recipe {
             msg!("Recipe is valid")
+            /*
+            // check collection is verified
+            assert_collection_verify_is_valid(
+                &ctx.accounts.skin_metadata,
+                &ctx.accounts.recipe_metadata,
+                &ctx.accounts.recipe_mint,
+                &ctx.accounts.recipe_master_edition.to_account_info(),
+            );
+            */
         }
 
         Ok(())
@@ -178,13 +188,16 @@ pub struct CreateRecipe<'info> {
     #[account(mut)]
     pub recipe_metadata: AccountInfo<'info>,
 
+    ///CHECK: verification is run in instruction
+    pub recipe_master_edition: AccountInfo<'info>,
+
     /**
       required programs for an NFT
     **/
     // holds SOL to pay for all Account rent
     pub rent_account: Sysvar<'info, Rent>,
     // creates Metadata account within Token Account
-    #[account(address = metaplex_token_metadata::ID)]
+    #[account(address = mpl_token_metadata::ID)]
     ///CHECK: verification is run in instruction
     pub token_metadata_program: AccountInfo<'info>,
     // creates Token Account of NFT
@@ -244,6 +257,8 @@ pub struct AddSkin<'info> {
     ///CHECK: verification is run in instruction
     #[account(mut)]
     pub recipe_metadata: AccountInfo<'info>,
+    ///CHECK: verification is run in instruction
+    pub recipe_master_edition: AccountInfo<'info>,
 
     /***
       required accounts for an NFT
@@ -262,7 +277,7 @@ pub struct AddSkin<'info> {
     // holds SOL to pay for all Account rent
     pub rent_account: Sysvar<'info, Rent>,
     // creates Metadata account within Token Account
-    #[account(address = metaplex_token_metadata::ID)]
+    #[account(address = mpl_token_metadata::ID)]
     ///CHECK: verification is run in instruction
     pub token_metadata_program: AccountInfo<'info>,
     // creates Token Account of NFT
