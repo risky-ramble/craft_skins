@@ -31,7 +31,6 @@ pub mod craft_skins {
     pub fn create_recipe(
         // CreateRecipe contains accounts to init Recipe NFT
         ctx: Context<CreateRecipe>,
-        program_manager_bump: u8,
         ingredient_mints: Vec<Pubkey>,
         ingredient_amounts: Vec<u64>,
     ) -> Result<()> {
@@ -55,13 +54,19 @@ pub mod craft_skins {
         )?;
         msg!("Done verify recipe NFT");
 
+        // add verify_collection to make NFT a valid Collection
+
         Ok(())
     }
 
+    /**
+      validate recipe accounts
+      validate skin accounts
+      validate Collection in metadata is recipe
+    **/
     pub fn add_skin(
         // CreateRecipe contains accounts to init Recipe NFT
         ctx: Context<AddSkin>,
-        program_manager_bump: u8,
         recipe_bump: u8,
     ) -> Result<()> {
         // validate accounts to create Recipe NFT
@@ -75,14 +80,10 @@ pub mod craft_skins {
 
         Ok(())
     }
+
     /*
-      CLIENT
-        "buy skin" button clicked
-        return mint of skin
       SERVER
-        skin = semi fungible token
-        skin.metadata.Collection = Recipe
-        Recipe.ingredients = Vec<Ingredient>
+        get skin master
 
         program.rpc.craft_skin(
           user_pubkey = payer,
@@ -93,11 +94,10 @@ pub mod craft_skins {
       ANCHOR
         validate skin_mint
             owned by Manager
-
+    */
     pub fn craft_skin(ctx: Context<Craft>) -> Result<()> {
         Ok(())
     }
-    */
 }
 
 #[derive(Accounts)]
@@ -127,14 +127,10 @@ pub struct Manager {
 }
 
 #[derive(Accounts)]
-#[instruction(program_manager_bump: u8)]
 pub struct CreateRecipe<'info> {
     // owner of Recipe NFT
-    #[account(mut, address = program_manager.admin)]
+    #[account(mut)]
     pub owner: Signer<'info>,
-
-    #[account(mut,seeds = [b"manager"], bump = program_manager_bump)]
-    pub program_manager: Account<'info, Manager>,
 
     /**
       account defining recipe of mints+amounts
@@ -199,14 +195,11 @@ pub struct Recipe {
 
 */
 #[derive(Accounts)]
-#[instruction(program_manager_bump: u8, recipe_bump: u8)]
+#[instruction(recipe_bump: u8)]
 pub struct AddSkin<'info> {
     // owner of Recipe NFT
-    #[account(mut, address = program_manager.admin)]
+    #[account(mut)]
     pub owner: Signer<'info>,
-
-    #[account(mut,seeds = [b"manager"], bump = program_manager_bump)]
-    pub program_manager: Account<'info, Manager>,
 
     /**
       account defining recipe of mints+amounts
