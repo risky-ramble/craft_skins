@@ -319,10 +319,11 @@ export const getRecipeAccount = async (
   programId: anchor.web3.PublicKey
 ): Promise<[anchor.web3.PublicKey, number]> => {
   return (
+    // creates Recipe account PDA (address)
     await anchor.web3.PublicKey.findProgramAddress(
       [
-        Buffer.from("recipe"), 
-        recipe_mint.toBuffer()
+        Buffer.from("recipe"), // arbitrary data
+        recipe_mint.toBuffer() // collection NFT mint (inside skin metadata)
       ],
       programId
     )
