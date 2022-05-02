@@ -8,6 +8,7 @@ import {
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   MintLayout,
+  AccountLayout,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { TOKEN_METADATA_PROGRAM_ID } from '../data/constants'
@@ -329,3 +330,130 @@ export const getRecipeAccount = async (
     )
   );
 }
+
+export const createRecipeAccount = async (
+  recipe_mint: anchor.web3.PublicKey,
+  programId: anchor.web3.PublicKey,
+  payer: anchor.web3.PublicKey,
+  lamports: number
+): Promise<[programs.core.Transaction, PublicKey]> => {
+
+  const tx = new Transaction({ feePayer: payer });
+  let [recipe_PDA, _] = await getRecipeAccount(recipe_mint, programId);
+
+  tx.add(
+    // create mint
+    SystemProgram.createAccount({
+      fromPubkey: payer,
+      newAccountPubkey: recipe_PDA,
+      lamports: lamports,
+      space: 240,
+      programId: TOKEN_PROGRAM_ID,
+    })
+  );
+
+  return [tx, recipe_PDA];
+}
+
+
+export async function createNewIngredient(
+  mint: PublicKey,
+  fee_payer: PublicKey,
+  dest_owner: PublicKey,
+  lamports,
+  amount
+): Promise<programs.core.Transaction> {
+  const tx = new Transaction({ feePayer: fee_payer });
+
+  let token = await Token.getAssociatedTokenAddress(
+    ASSOCIATED_TOKEN_PROGRAM_ID, // always associated token program id
+    TOKEN_PROGRAM_ID, // always token program id
+    mint, // mint
+    dest_owner // token account authority,
+  );
+
+  tx.add(
+    // create mint
+    SystemProgram.createAccount({
+      fromPubkey: fee_payer,
+      newAccountPubkey: mint,
+      space: MintLayout.span,
+      lamports: lamports,
+      programId: TOKEN_PROGRAM_ID,
+    }),
+    // fungible token mint
+    Token.createInitMintInstruction(
+      TOKEN_PROGRAM_ID,
+      mint,
+      1,
+      fee_payer,
+      fee_payer
+    ),
+    // create token account
+    Token.createAssociatedTokenAccountInstruction(
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+      TOKEN_PROGRAM_ID,
+      mint,
+      token,
+      dest_owner,
+      fee_payer
+    ),
+    // mint to token account
+    Token.createMintToInstruction(
+      TOKEN_PROGRAM_ID,
+      mint,
+      token,
+      fee_payer,
+      [],
+      amount
+    )
+  );
+
+  return tx;
+}
+
+export const airdropIngredient = async (
+  ingredientMint: PublicKey,
+  owner: PublicKey,
+  newOwner: PublicKey,
+  amount: number
+): Promise<programs.core.Transaction> => {
+  const tx = new Transaction({ feePayer: owner });
+
+  let from = await Token.getAssociatedTokenAddress(
+    ASSOCIATED_TOKEN_PROGRAM_ID, // always associated token program id
+    TOKEN_PROGRAM_ID, // always token program id
+    ingredientMint, // mint
+    owner // token account authority,
+  );
+  let to = await Token.getAssociatedTokenAddress(
+    ASSOCIATED_TOKEN_PROGRAM_ID, // always associated token program id
+    TOKEN_PROGRAM_ID, // always token program id
+    ingredientMint, // mint
+    newOwner // token account authority,
+  );
+
+  tx.add(
+    // create token account
+    Token.createAssociatedTokenAccountInstruction(
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+      TOKEN_PROGRAM_ID,
+      ingredientMint,
+      to,
+      newOwner,
+      owner
+    ),
+    // transfer ingredient
+    Token.createTransferInstruction(
+      TOKEN_PROGRAM_ID, 
+      from, 
+      to, 
+      owner, 
+      [], 
+      amount
+    )
+  );
+
+  return tx;
+}
+

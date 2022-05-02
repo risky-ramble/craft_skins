@@ -1,5 +1,5 @@
 import * as anchor from "@project-serum/anchor";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, AccountMeta } from "@solana/web3.js";
 import { BN } from "bn.js";
 import { Program } from "@project-serum/anchor";
 import { CraftSkins } from "../target/types/craft_skins";
@@ -15,7 +15,9 @@ import {
   createRecipe,
   createSkin,
   verifySkinCollection,
-  getRecipeAccount
+  getRecipeAccount,
+  createNewIngredient,
+  airdropIngredient
 } from './utils/utils'
 import {
   recipe_nft_data,
@@ -54,6 +56,8 @@ describe("craft_skins", () => {
   let skin_mint: anchor.web3.Keypair
   let skin_metadata_PDA: anchor.web3.PublicKey
   let skin_ata: anchor.web3.PublicKey
+
+  let ingredient: anchor.web3.Keypair = anchor.web3.Keypair.generate();
 
 /** ============================================================================================
                                         I N I T I A L I Z E   
@@ -106,9 +110,7 @@ describe("craft_skins", () => {
         metadata account => holds arbitrary data to customize NFT
     */
     // lamports (SOL) required to make mint Account rent exempt
-    let lamports = await Token.getMinBalanceRentForExemptMint(
-      provider.connection
-    );
+    let lamports = await Token.getMinBalanceRentForExemptMint(provider.connection);
     const data = recipe_nft_data(manager.publicKey);
     let [
       new_recipe_mint, 
@@ -135,24 +137,27 @@ describe("craft_skins", () => {
     let recipeSig = await provider.sendAndConfirm(recipe_mint_tx, [recipe_mint]);
     console.log('mint recipe signature: ', recipeSig);
 
-    /* 
-      get PDA of Recipe account
-      stores ingredients, owned by program
-      Recipe {
-        mints: Vec<Pubkey>, // mint of each ingredient
-        amounts: Vec<u64>, // quantity of each ingredient
-      }
-      seeds for recipe PDA defined in CreateRecipe.recipe in lib.rs
-    */
+    // get PDA of Recipe account, which stores {mints[], amounts[]} needed to craft a skin
     [recipe_account, recipe_bump] = await getRecipeAccount(
       recipe_mint.publicKey,
       program.programId
     );
-    console.log('recipe_account: ', recipe_account.toString())
+    console.log('recipe_account: ', recipe_account.toString());
+
+    // create test ingredient, send to admin for safekeeping
+    let airdrop_tx = await createNewIngredient(
+      ingredient.publicKey,
+      provider.wallet.publicKey,
+      provider.wallet.publicKey,
+      lamports,
+      100
+    );
+    let sig = await provider.sendAndConfirm(airdrop_tx, [ingredient]);
+    console.log('airdrop ingredient to admin, trx sig:', sig)
 
     // test ingredient
     let ingredientMints = []
-    ingredientMints.push(new PublicKey("Gvgxm6wRv9rkWdFqB4GSVt7DbetZJzedJV1JbJtJHtuh"));
+    ingredientMints.push(ingredient.publicKey);
     let ingredientAmounts = []
     ingredientAmounts.push(new BN(10));
 
@@ -319,5 +324,118 @@ describe("craft_skins", () => {
       console.log(`${display.red}`,`${display.bomb} add_skin failed`, err);
     }
   }); // end addSkin
+
+/** ============================================================================================
+                                  C R A F T      S K I N   
+    ============================================================================================   
+**/
+
+  it("Craft skin", async () => {
+
+    // create test user
+    const user = anchor.web3.Keypair.generate();
+
+    let lamports = await Token.getMinBalanceRentForExemptMint(provider.connection);
+    let airdrop_tx = await airdropIngredient(
+      ingredient.publicKey, // ingredient mint to transfer
+      provider.wallet.publicKey, // owner
+      user.publicKey, // new owner
+      10 // amount to transfer
+    );
+    let sig = await provider.sendAndConfirm(airdrop_tx);
+    console.log('airdrop ingredient to user? ', sig)
+
+    // receive skin mint from client
+    let skinToBuy = skin_mint.publicKey;
+    console.log('skinToBuy: ', skinToBuy.toString())
+    // user skin ATA (to receive)
+    let skinToATA = await Token.getAssociatedTokenAddress(
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+      TOKEN_PROGRAM_ID,
+      skin_mint.publicKey,
+      user.publicKey,
+    );
+    console.log('skinToATA: ', skinToATA.toString())
+    // owner of skin (to send). This is provider.wallet
+    let skinFromATA = await Token.getAssociatedTokenAddress(
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+      TOKEN_PROGRAM_ID,
+      skin_mint.publicKey,
+      provider.wallet.publicKey
+    );
+    console.log('skinFromATA: ', skinToATA.toString())
+    // find skin metadata
+    let skinMetadataPDA = skin_metadata_PDA;
+    // find metadata.collectionMint
+    let skinMetadata = await provider.connection.getAccountInfo(
+      skinMetadataPDA
+    );
+    // skin.metadata.data
+    let metadataData = MetadataData.deserialize(
+      skinMetadata.data,
+    );
+    // skin.metadata.data.collection.key
+    let skinCollectionMint: PublicKey = new PublicKey(metadataData.collection.key);
+    // find collectionMetadata
+    let skinCollectionMetadata = await programs.metadata.Metadata.getPDA(skinCollectionMint);
+    // find collectionMasterEdition
+    let skinCollectionMasterEdition = await programs.metadata.MasterEdition.getPDA(skinCollectionMint);
+    // find collectionTokenAccount => PDA of collectionMint + owner pubkey
+    let skinCollectionATA = await Token.getAssociatedTokenAddress(
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+      TOKEN_PROGRAM_ID,
+      skinCollectionMint,
+      provider.wallet.publicKey
+    );
+    // find recipe PDA from collectionMint
+    let [skinRecipePDA, _] = await getRecipeAccount(skinCollectionMint, program.programId);
+    console.log('skinRecipeAccount: ', skinRecipePDA.toString())
+    // recipe account (mints[], amounts[])
+    let skinRecipe = await program.account.recipe.fetch(skinRecipePDA);
+
+    // find address of user ATA for each recipe mint
+    let user_tokens: anchor.web3.PublicKey[] = [];
+    for (let i = 0; i < skinRecipe.mints.length; i++) {
+      let token = await Token.getAssociatedTokenAddress(
+        ASSOCIATED_TOKEN_PROGRAM_ID,
+        TOKEN_PROGRAM_ID,
+        skinRecipe.mints[i],
+        user.publicKey
+      );
+      user_tokens.push(token);
+    }
+    let remaining_accounts = user_tokens.map(token => {
+      return {pubkey: token, isSigner: false, isWritable: true}
+    });
+
+    try {
+      const craft_skin_tx = await program.methods.craftSkin(
+        recipe_bump
+        )
+        .accounts({
+          owner: provider.wallet.publicKey,
+          user: user.publicKey,
+          recipe: skinRecipePDA,
+          recipeTokenAccount: skinCollectionATA,
+          recipeMint: skinCollectionMint,
+          recipeMetadata: skinCollectionMetadata,
+          recipeMasterEdition: skinCollectionMasterEdition,
+          skinTokenAccount: skinFromATA,
+          skinMint: skinToBuy,
+          skinMetadata: skinMetadataPDA,
+          rentAccount: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId
+        })
+        .remainingAccounts(remaining_accounts)
+        .signers([wallet, user])
+        .rpc()
+      console.log(`${display.green}`,`${display.grapes} CraftSkin transaction signature `, craft_skin_tx);
+    } catch (err) {
+      console.log(`${display.red}`,`${display.bomb} craft_skin failed`, err);
+    }
+
+  }); // end craftSkin
 
 });

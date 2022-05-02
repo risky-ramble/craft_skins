@@ -2,17 +2,12 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, TokenAccount, ID as SPL_TOKEN_ID};
 use log::{debug, info};
 use mpl_token_metadata::instruction::{sign_metadata, update_metadata_accounts};
-use mpl_token_metadata::state::{Creator, Data, Metadata, EDITION, PREFIX};
+use mpl_token_metadata::state::{Collection, Creator, DataV2, Metadata, EDITION, PREFIX};
 use mpl_token_metadata::utils::{
     assert_derivation, assert_edition_valid, assert_initialized, assert_owned_by,
 };
 use std::convert::TryFrom;
 use std::str::FromStr;
-
-//use mpl_token_metadata::assertions::collection::{
-//assert_collection_verify_is_valid, assert_has_collection_authority,
-//};
-//use mpl_token_metadata::state::{Collection, DataV2};
 
 // validate accounts needed to make Recipe NFT
 pub fn verify_recipe_nft<'info, 'a>(
@@ -82,7 +77,7 @@ pub fn verify_recipe_pda<'info, 'a>(
     recipe_account: &Account<'info, Recipe>,
     program_id: &Pubkey,
     seeds: &[&[u8]],
-) -> Result<bool> {
+) -> Result<()> {
     // derive recipe account PDA
     let (key, _) = Pubkey::find_program_address(&seeds, program_id);
 
@@ -90,13 +85,44 @@ pub fn verify_recipe_pda<'info, 'a>(
     if key != recipe_account.key() {
         return Err(ErrorCode::DerivedKeyInvalid.into());
     }
-    Ok(true)
+    Ok(())
+}
+
+pub fn verify_user_ingredient<'info>(
+    user_ingredient_token: &AccountInfo,
+    user: &AccountInfo,
+    expected_ingredient_mint: &Pubkey,
+    expected_ingredient_amount: &u64,
+) -> Result<()> {
+    // check token account is init
+    let token: spl_token::state::Account = assert_initialized(user_ingredient_token)?;
+    // check token account is owned by Solana SPL Token Program
+    assert_owned_by(user_ingredient_token, &SPL_TOKEN_ID)?;
+    // check owner of token = user
+    assert_eq!(token.owner, user.key());
+
+    // clone token account info
+    let info = user_ingredient_token.try_borrow_data().unwrap();
+    // construct account info into TokenAccount
+    let token_account = TokenAccount::try_deserialize(&mut &**info).unwrap();
+    // check user ingredient has required amount
+    if token_account.amount != *expected_ingredient_amount {
+        return Err(ErrorCode::TokenAmountInvalid.into());
+    }
+    // check user ingredient = required ingredient mint
+    if token_account.mint != expected_ingredient_mint.key() {
+        return Err(ErrorCode::TokenMintInvalid.into());
+    }
+    msg!("Ingredient validated");
+
+    Ok(())
 }
 
 // validate accounts needed to make Recipe NFT
 pub fn verify_skin_nft<'info, 'a>(
     token_account: &Account<'info, TokenAccount>,
     mint: &Account<'info, Mint>,
+    collection_mint: &Account<'info, Mint>,
     metadata: &AccountInfo<'info>,
     owner: &Signer<'info>,
 ) -> Result<()> {
@@ -134,6 +160,7 @@ pub fn verify_skin_nft<'info, 'a>(
         return Err(ErrorCode::NotInitialized.into());
     };
     msg!("metadata account init");
+
     // check owner is creator/signer for metadata account
     let metadata_account = Metadata::from_account_info(&metadata)?;
     let creators_found = metadata_account.data.creators.clone().unwrap();
@@ -142,6 +169,14 @@ pub fn verify_skin_nft<'info, 'a>(
         .find(|c| c.verified && c.address == owner.key())
         .unwrap();
     msg!("metadata creators validated");
+
+    // check collection struct is set
+    let collection_found = &mut metadata_account.collection.clone().unwrap();
+    // check collection is verified
+    if !collection_found.verified {
+        return Err(ErrorCode::CollectionUnverified.into());
+    }
+    // figure out how to check mint is owned by SPL token program?
 
     // all tests passed!
     Ok(())
@@ -172,4 +207,10 @@ pub enum ErrorCode {
 
     #[msg("Derived key is invalid recipe account")]
     DerivedKeyInvalid,
+
+    #[msg("Collection is unverified")]
+    CollectionUnverified,
+
+    #[msg("Collection key is not owned by Token Program")]
+    CollectionKeyInvalid,
 }

@@ -4,6 +4,7 @@ export const bomb = String.fromCodePoint(0x1F4A5)
 export const unicorn = String.fromCodePoint(0x1F984)
 export const popcorn = String.fromCodePoint(0x1F37F)
 export const octopus = String.fromCodePoint(0x1F419)
+export const grapes = String.fromCodePoint(0x1F347)
 
 
 export const cyan = "\x1b[36m"
