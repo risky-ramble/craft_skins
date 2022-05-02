@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::AccountsClose;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, ID as SPL_TOKEN_ID};
+use mpl_token_metadata::assertions::collection::assert_collection_verify_is_valid;
 use mpl_token_metadata::state::PREFIX as METAPLEX_PREFIX;
 use mpl_token_metadata::state::{Creator, Metadata};
 use mpl_token_metadata::utils::assert_derivation;
@@ -96,18 +97,22 @@ pub mod craft_skins {
             &[b"recipe", &ctx.accounts.recipe_mint.key().as_ref()],
         )
         .unwrap();
+        msg!("Done verify recipe account PDA");
 
         if is_valid_recipe {
-            msg!("Recipe is valid")
-            /*
+            msg!("Recipe is valid");
             // check collection is verified
+            let skin_metadata_account =
+                &mut Metadata::from_account_info(&ctx.accounts.skin_metadata)?;
+            let collection_metadata_account =
+                &mut Metadata::from_account_info(&ctx.accounts.recipe_metadata)?;
             assert_collection_verify_is_valid(
-                &ctx.accounts.skin_metadata,
-                &ctx.accounts.recipe_metadata,
-                &ctx.accounts.recipe_mint,
+                skin_metadata_account,
+                collection_metadata_account,
+                &ctx.accounts.recipe_mint.to_account_info(),
                 &ctx.accounts.recipe_master_edition.to_account_info(),
-            );
-            */
+            )?;
+            msg!("Done verify collection is valid");
         }
 
         Ok(())
