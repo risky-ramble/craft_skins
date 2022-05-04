@@ -180,7 +180,7 @@ pub mod craft_skins {
             let ingredient_mint = &ctx.accounts.recipe.mints[i];
             let ingredient_amount = &ctx.accounts.recipe.amounts[i];
 
-            // verify user ingredient token/mint/amount == required ingredient mint/amount
+            // verify user ingredient token == required ingredient mint/amount
             verify_user_ingredient(
                 &user_token,
                 &ctx.accounts.user.to_account_info(),
@@ -191,6 +191,10 @@ pub mod craft_skins {
             i += 1;
         }
         msg!("Done user ingredient validation");
+
+        // transfer user tokens to escrow
+        // transfer skin to user from program
+        // release tokens to program
 
         Ok(())
     }

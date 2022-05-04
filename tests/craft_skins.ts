@@ -192,12 +192,10 @@ describe("craft_skins", () => {
       let recipe_metadata = await provider.connection.getAccountInfo(
         recipe_metadata_PDA
       );
-      let recipe_info = MetadataData.deserialize(
-        recipe_metadata.data
-      );
+      let [recipe_info, _] = Metadata.fromAccountInfo(recipe_metadata);
   
-      console.log("recipe metadata data ->")
-      console.log(recipe_info.data);
+      console.log("recipe metadata ->")
+      console.log(recipe_info);
   
       const created_recipe_token = await provider.connection.getParsedAccountInfo(
         recipe_ata
@@ -294,9 +292,7 @@ describe("craft_skins", () => {
       let skin_metadata = await provider.connection.getAccountInfo(
         skin_metadata_PDA
       );
-      let skin_info = MetadataData.deserialize(
-        skin_metadata.data,
-      );
+      let [skin_info, __] = Metadata.fromAccountInfo(skin_metadata);
   
       console.log("skin metadata ->")
       console.log(skin_info);
@@ -371,9 +367,8 @@ describe("craft_skins", () => {
       skinMetadataPDA
     );
     // skin.metadata.data
-    let metadataData = MetadataData.deserialize(
-      skinMetadata.data,
-    );
+    let [metadataData, ___] = Metadata.fromAccountInfo(skinMetadata);
+
     // skin.metadata.data.collection.key
     let skinCollectionMint: PublicKey = new PublicKey(metadataData.collection.key);
     // find collectionMetadata
