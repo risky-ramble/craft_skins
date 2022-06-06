@@ -21,6 +21,7 @@ overflow-checks = true
 [dependencies]
 anchor-lang = "0.24.2"
 anchor-spl = "0.24.2"
-spl-token = "~3.2.0"
+spl-token = { version="~3.2.0", features = [ "no-entrypoint" ] }
 log = "0.4"
 mpl-token-metadata = { version = "1.2.7", features = [ "no-entrypoint" ] }
+solana-program = "1.7.11"

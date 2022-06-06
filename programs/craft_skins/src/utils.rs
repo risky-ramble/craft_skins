@@ -1,13 +1,14 @@
+use anchor_lang::context::CpiContext;
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, TokenAccount, ID as SPL_TOKEN_ID};
-use log::{debug, info};
-use mpl_token_metadata::instruction::{sign_metadata, update_metadata_accounts};
-use mpl_token_metadata::state::{Collection, Creator, DataV2, Metadata, EDITION, PREFIX};
+use anchor_spl::associated_token::{create, get_associated_token_address};
+use anchor_spl::associated_token::{AssociatedToken, Create};
+use anchor_spl::token::transfer;
+use anchor_spl::token::{Mint, Token, TokenAccount, Transfer, ID as SPL_TOKEN_ID};
+use mpl_token_metadata::state::{Metadata, PREFIX};
 use mpl_token_metadata::utils::{
     assert_derivation, assert_edition_valid, assert_initialized, assert_owned_by,
 };
-use std::convert::TryFrom;
-use std::str::FromStr;
+use solana_program::account_info::AccountInfo;
 
 // validate accounts needed to make Recipe NFT
 pub fn verify_recipe_nft<'info, 'a>(
@@ -44,17 +45,14 @@ pub fn verify_recipe_nft<'info, 'a>(
             token.mint.as_ref(),               // mint pubkey
         ],
     )?;
-    msg!("Recipe metadata validated");
 
     // check master edition PDA was derived correctly
     assert_edition_valid(&mpl_token_metadata::id(), &mint.key(), edition)?;
-    msg!("Recipe master edition validated");
 
     // check metadata account is not empty
     if metadata.data_is_empty() {
         return Err(ErrorCode::NotInitialized.into());
     };
-    msg!("metadata account init");
     // check owner is creator/signer for metadata account
     let metadata_account = Metadata::from_account_info(&metadata)?;
     let creators_found = metadata_account.data.creators.clone().unwrap();
@@ -62,7 +60,6 @@ pub fn verify_recipe_nft<'info, 'a>(
         .iter()
         .find(|c| c.verified && c.address == owner.key())
         .unwrap();
-    msg!("metadata creators validated");
 
     // all tests passed!
     Ok(())
@@ -73,7 +70,7 @@ pub fn verify_recipe_nft<'info, 'a>(
     => ["recipe", recipe_mint], this.programId
     check recipe_account address == result of PDA
 */
-pub fn verify_recipe_pda<'info, 'a>(
+pub fn assert_recipe_derivation<'info, 'a>(
     recipe_account: &Account<'info, Recipe>,
     program_id: &Pubkey,
     seeds: &[&[u8]],
@@ -86,6 +83,59 @@ pub fn verify_recipe_pda<'info, 'a>(
         return Err(ErrorCode::DerivedKeyInvalid.into());
     }
     Ok(())
+}
+
+pub fn assert_escrow_derivation<'info, 'a>(
+    program_escrow: &AccountInfo<'a>,
+    program_id: &Pubkey,
+    seeds: &[&[u8]],
+) -> Result<u8> {
+    // derive recipe account PDA
+    let (key, bump) = Pubkey::find_program_address(&seeds, program_id);
+    // if recipe_account doesn't match correct PDA, throw error
+    if key != *program_escrow.key {
+        return Err(ErrorCode::DerivedKeyInvalid.into());
+    }
+    Ok(bump)
+}
+
+pub fn verify_escrow_account(
+    escrow_token_account: &AccountInfo,
+    program_signer: &AccountInfo,
+    mint: &AccountInfo,
+) -> Result<bool> {
+    let check_escrow_key = get_associated_token_address(program_signer.key, mint.key);
+    msg!("escrow key {:?}", escrow_token_account.key);
+    msg!("echeck_escrow_key {:?}", check_escrow_key);
+
+    let data = escrow_token_account.try_borrow_data().unwrap();
+    let acc = TokenAccount::try_deserialize(&mut &**data);
+
+    match acc {
+        Ok(account) => {
+            assert_eq!(account.mint, mint.key());
+            assert_eq!(escrow_token_account.key(), check_escrow_key);
+            assert_eq!(account.owner, program_signer.key());
+            assert_owned_by(escrow_token_account, &SPL_TOKEN_ID)?;
+            Ok(false)
+        }
+        Err(err) => Ok(true),
+    }
+}
+
+pub fn assert_pda_derivation<'info, 'a>(
+    account: &AccountInfo<'info>,
+    program_id: &Pubkey,
+    seeds: &[&[u8]],
+) -> Result<u8> {
+    // derive recipe account PDA
+    let (key, bump) = Pubkey::find_program_address(&seeds, program_id);
+
+    // if recipe_account doesn't match correct PDA, throw error
+    if key != account.key() {
+        return Err(ErrorCode::DerivedKeyInvalid.into());
+    }
+    Ok(bump)
 }
 
 pub fn verify_user_ingredient<'info>(
@@ -103,17 +153,17 @@ pub fn verify_user_ingredient<'info>(
 
     // clone token account info
     let info = user_ingredient_token.try_borrow_data().unwrap();
-    // construct account info into TokenAccount
+    // construct account info into TokenAccount -> allows us to read contents/struct (AccountInfo)
     let token_account = TokenAccount::try_deserialize(&mut &**info).unwrap();
-    // check user ingredient has required amount
+
+    // check user ingredient is required amount
     if token_account.amount != *expected_ingredient_amount {
         return Err(ErrorCode::TokenAmountInvalid.into());
     }
-    // check user ingredient = required ingredient mint
+    // check user ingredient is required mint
     if token_account.mint != expected_ingredient_mint.key() {
         return Err(ErrorCode::TokenMintInvalid.into());
     }
-    msg!("Ingredient validated");
 
     Ok(())
 }
@@ -153,13 +203,11 @@ pub fn verify_skin_nft<'info, 'a>(
             token.mint.as_ref(),               // mint pubkey
         ],
     )?;
-    msg!("Recipe metadata validated");
 
     // check metadata account is not empty
     if metadata.data_is_empty() {
         return Err(ErrorCode::NotInitialized.into());
     };
-    msg!("metadata account init");
 
     // check owner is creator/signer for metadata account
     let metadata_account = Metadata::from_account_info(&metadata)?;
@@ -168,7 +216,6 @@ pub fn verify_skin_nft<'info, 'a>(
         .iter()
         .find(|c| c.verified && c.address == owner.key())
         .unwrap();
-    msg!("metadata creators validated");
 
     // check collection struct is set
     let collection_found = &mut metadata_account.collection.clone().unwrap();
@@ -176,9 +223,81 @@ pub fn verify_skin_nft<'info, 'a>(
     if !collection_found.verified {
         return Err(ErrorCode::CollectionUnverified.into());
     }
-    // figure out how to check mint is owned by SPL token program?
+    if collection_found.key != collection_mint.key() {
+        return Err(ErrorCode::CollectionKeyInvalid.into());
+    }
 
     // all tests passed!
+    Ok(())
+}
+
+/// Creates associated token account using Program Derived Address for the given seeds
+pub fn create_escrow_account<'info>(
+    user: &Signer<'info>,
+    program_signer: &AccountInfo<'info>,
+    //signer_bump: &u8,
+    escrow_token: &AccountInfo<'info>,
+    user_token: &AccountInfo<'info>,
+    mint: &AccountInfo<'info>,
+    amount: &u64,
+    rent_account: &Sysvar<'info, Rent>,
+    token_program: &Program<'info, Token>,
+    ata_program: &Program<'info, AssociatedToken>,
+    system_program: &Program<'info, System>,
+    program_id: &Pubkey,
+) -> Result<()> {
+    // verify program escrow PDA seeds are correct
+    // will receive ingredient from user
+
+    let not_init = verify_escrow_account(
+        escrow_token,   // token account to receive ingredient from user
+        program_signer, // owner of escrow_token account (is also a PDA)
+        mint,           // expected ingredient mint defined in Recipe
+    )
+    .unwrap();
+    let signer_bump = assert_pda_derivation(program_signer, program_id, &["signer".as_bytes()])?;
+
+    // escrow token account not initialized -> create account
+    if not_init {
+        let cpi_accounts = Create {
+            payer: user.to_account_info(),
+            associated_token: escrow_token.to_account_info(),
+            authority: program_signer.to_account_info(),
+            mint: mint.clone(),
+            system_program: system_program.to_account_info(),
+            token_program: token_program.to_account_info(),
+            rent: rent_account.to_account_info(),
+        };
+        msg!("payer {:?}", cpi_accounts.payer.key);
+        msg!("ata {:?}", cpi_accounts.associated_token.key);
+        msg!("auth {:?}", cpi_accounts.authority.key);
+        msg!("mint {:?}", cpi_accounts.mint.key);
+        msg!("sys program {:?}", cpi_accounts.system_program.key);
+        msg!("token program {:?}", cpi_accounts.token_program.key);
+        msg!("rent {:?}", cpi_accounts.rent.key);
+        msg!("ata program {:?}", ata_program.key);
+
+        let cpi_ctx = CpiContext::new(ata_program.to_account_info(), cpi_accounts);
+        // create account
+        create(cpi_ctx)?;
+    }
+    Ok(())
+}
+
+pub fn transfer_ingredient_to_escrow<'info>(
+    from: &AccountInfo<'info>,
+    to: &AccountInfo<'info>,
+    payer: &AccountInfo<'info>,
+    amount: &u64,
+    token_program: &Program<'info, Token>,
+) -> Result<()> {
+    let cpi_accounts = Transfer {
+        from: from.to_account_info(),
+        to: to.to_account_info(),
+        authority: payer.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new(token_program.to_account_info(), cpi_accounts);
+    transfer(cpi_ctx, *amount)?;
     Ok(())
 }
 
@@ -193,7 +312,10 @@ pub enum ErrorCode {
     #[msg("Token account requires balance of 1")]
     TokenAmountInvalid,
 
-    #[msg("Token account mint != mint account")]
+    #[msg("Token account owner is invalid")]
+    TokenOwnerInvalid,
+
+    #[msg("Token account mint != expected Recipe mint")]
     TokenMintInvalid,
 
     #[msg("Metadata account not initialized")]
@@ -205,12 +327,18 @@ pub enum ErrorCode {
     #[msg("Not enough tokens")]
     NotEnoughToken,
 
-    #[msg("Derived key is invalid recipe account")]
+    #[msg("Derived key is invalid PDA")]
     DerivedKeyInvalid,
 
     #[msg("Collection is unverified")]
     CollectionUnverified,
 
-    #[msg("Collection key is not owned by Token Program")]
+    #[msg("Collect key is not expected value")]
     CollectionKeyInvalid,
+
+    #[msg("User token account mint != user mint account")]
+    TokenMintMismatch,
+
+    #[msg("Escrow token account not initialized")]
+    EscrowNotInitialized,
 }

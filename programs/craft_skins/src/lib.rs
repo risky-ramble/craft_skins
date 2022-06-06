@@ -1,14 +1,8 @@
 use anchor_lang::prelude::*;
-use anchor_lang::AccountsClose;
 use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, ID as SPL_TOKEN_ID};
-use log::{debug, info};
+use anchor_spl::token::{Mint, Token, TokenAccount};
 use mpl_token_metadata::assertions::collection::assert_collection_verify_is_valid;
-use mpl_token_metadata::state::PREFIX as METAPLEX_PREFIX;
-use mpl_token_metadata::state::{Creator, Metadata};
-use mpl_token_metadata::utils::assert_derivation;
-use std::str::FromStr;
-use std::{convert::TryInto, slice::Iter};
+use mpl_token_metadata::state::Metadata;
 
 pub mod utils;
 use utils::*;
@@ -77,9 +71,9 @@ pub mod craft_skins {
         verify_skin_nft(
             &ctx.accounts.skin_token_account, // token account holds everything
             &ctx.accounts.skin_mint,          // mint of skin
-            &ctx.accounts.recipe_mint,        // mint of recipe/collection NFT in skin's metadata
-            &ctx.accounts.skin_metadata,      // metadata is specific data, Metaplex standard
-            &ctx.accounts.owner,              // owner of Recipe NFT
+            &ctx.accounts.recipe_mint,
+            &ctx.accounts.skin_metadata, // metadata is specific data, Metaplex standard
+            &ctx.accounts.owner,         // owner of Recipe NFT
         )?;
         msg!("Done verify skin");
 
@@ -94,7 +88,7 @@ pub mod craft_skins {
         msg!("Done verify skin recipe");
 
         // validate recipe_account is correct PDA using recipe_mint as seed
-        verify_recipe_pda(
+        assert_recipe_derivation(
             &ctx.accounts.recipe,
             &ctx.program_id,
             &[b"recipe", &ctx.accounts.recipe_mint.key().as_ref()],
@@ -129,16 +123,16 @@ pub mod craft_skins {
             owned by Manager
     */
     pub fn craft_skin<'info>(
-        ctx: Context<'_, '_, '_, 'info, CraftSkin>,
-        _recipe_bump: u8,
+        ctx: Context<'_, '_, '_, 'info, CraftSkin<'info>>,
+        //program_signer_bump: u8,
     ) -> Result<()> {
         // validate accounts for existing skin
         verify_skin_nft(
             &ctx.accounts.skin_token_account, // token account holds everything
             &ctx.accounts.skin_mint,          // mint of skin
-            &ctx.accounts.recipe_mint,        // mint of recipe/collection NFT in skin's metadata
-            &ctx.accounts.skin_metadata,      // metadata is specific data, Metaplex standard
-            &ctx.accounts.owner,              // owner of Recipe NFT
+            &ctx.accounts.recipe_mint,
+            &ctx.accounts.skin_metadata, // metadata is specific data, Metaplex standard
+            &ctx.accounts.owner,         // owner of Recipe NFT
         )?;
         msg!("Done verify skin");
 
@@ -153,12 +147,11 @@ pub mod craft_skins {
         msg!("Done verify skin recipe");
 
         // validate recipe_account is correct PDA using recipe_mint as seed
-        verify_recipe_pda(
+        assert_recipe_derivation(
             &ctx.accounts.recipe,
             &ctx.program_id,
             &[b"recipe", &ctx.accounts.recipe_mint.key().as_ref()],
         )?;
-        msg!("Done verify recipe account PDA");
 
         // validate collection
         let skin_metadata_account = &mut Metadata::from_account_info(&ctx.accounts.skin_metadata)?;
@@ -170,31 +163,60 @@ pub mod craft_skins {
             &ctx.accounts.recipe_mint.to_account_info(),
             &ctx.accounts.recipe_master_edition.to_account_info(),
         )?;
-        msg!("Done verify collection");
 
         // validate each user token account holds required mint+amount defined in Recipe
         let mut i = 0;
         let iterator = &mut ctx.remaining_accounts.iter();
         while i < ctx.remaining_accounts.len() {
+            // user ingredient token account
             let user_token = next_account_info(iterator)?;
+            // user ingredient mint (should == ingredient_mint)
+            let user_mint = next_account_info(iterator)?;
+            // program escrow PDA to receive user ingredient
+            let escrow_token = next_account_info(iterator)?;
+            // expected ingredient mint -> defined in Recipe
             let ingredient_mint = &ctx.accounts.recipe.mints[i];
+            // expected ingredient amount -> defined in Recipe
             let ingredient_amount = &ctx.accounts.recipe.amounts[i];
 
-            // verify user ingredient token == required ingredient mint/amount
+            // verify user ingredient token == required ingredient mint/amount defined in Recipe
             verify_user_ingredient(
-                &user_token,
-                &ctx.accounts.user.to_account_info(),
-                &ingredient_mint,
-                &ingredient_amount,
+                &user_token,                          // ingredient token account
+                &ctx.accounts.user.to_account_info(), // owner of user_token account
+                &ingredient_mint, // expected mint inside user_token, defined in Recipe
+                &ingredient_amount, // expect amount inside user_token, deefined in Recipe
             )?;
 
-            i += 1;
-        }
-        msg!("Done user ingredient validation");
+            // do some stuff
+            create_escrow_account(
+                &ctx.accounts.user,
+                &ctx.accounts.program_signer,
+                //&program_signer_bump,
+                escrow_token,
+                user_token,
+                user_mint,
+                ingredient_amount,
+                &ctx.accounts.rent_account,
+                &ctx.accounts.token_program,
+                &ctx.accounts.ata_program,
+                &ctx.accounts.system_program,
+                &ctx.program_id,
+            )?;
+            msg!("create_escrow_account");
 
-        // transfer user tokens to escrow
-        // transfer skin to user from program
-        // release tokens to program
+            // transfer token from user to escrow
+            transfer_ingredient_to_escrow(
+                user_token,
+                escrow_token,
+                &ctx.accounts.user,
+                ingredient_amount,
+                &ctx.accounts.token_program,
+            )?;
+            msg!("transfer_ingredient_to_escrow");
+
+            i += 3;
+        }
+        msg!("Done user ingredient validations & transfer to escrows");
 
         Ok(())
     }
@@ -285,7 +307,6 @@ pub struct CreateRecipe<'info> {
     create skin with recipe as Collection
 */
 #[derive(Accounts)]
-#[instruction(recipe_bump: u8)]
 pub struct AddSkin<'info> {
     // owner of Recipe NFT
     #[account(mut)]
@@ -297,7 +318,7 @@ pub struct AddSkin<'info> {
     **/
     #[account(
         seeds = [b"recipe", recipe_mint.key().as_ref()],
-        bump = recipe_bump,
+        bump
     )]
     pub recipe: Account<'info, Recipe>,
 
@@ -341,7 +362,6 @@ pub struct AddSkin<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(recipe_bump: u8)]
 pub struct CraftSkin<'info> {
     // owner of Recipe NFT
     #[account(mut)]
@@ -350,33 +370,26 @@ pub struct CraftSkin<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
-    /**
-      account defining recipe of mints+amounts
-      to craft a skin NFT
-    **/
+    #[account(mut,seeds = [b"signer"], bump)]
+    ///CHECK: Is simply a pda - seeds will be from program
+    pub program_signer: UncheckedAccount<'info>,
+
+    // recipe accounts
     #[account(
         seeds = [b"recipe", recipe_mint.key().as_ref()],
-        bump = recipe_bump,
+        bump
     )]
     pub recipe: Account<'info, Recipe>,
-
-    /**
-      required accounts for an NFT
-      should be exisiting Recipe NFT
-    **/
     #[account(mut)]
-    pub recipe_token_account: Account<'info, TokenAccount>,
-    pub recipe_mint: Account<'info, Mint>,
+    pub recipe_token_account: Box<Account<'info, TokenAccount>>,
+    pub recipe_mint: Box<Account<'info, Mint>>,
     ///CHECK: verification is run in instruction
     #[account(mut)]
     pub recipe_metadata: AccountInfo<'info>,
     ///CHECK: verification is run in instruction
     pub recipe_master_edition: AccountInfo<'info>,
 
-    /***
-      required accounts for an NFT
-      should be new skin to mint
-    **/
+    // skin accounts, user to receive from program
     #[account(mut)]
     pub skin_token_account: Account<'info, TokenAccount>,
     pub skin_mint: Account<'info, Mint>,
@@ -395,6 +408,7 @@ pub struct CraftSkin<'info> {
     pub token_metadata_program: AccountInfo<'info>,
     // creates Token Account of NFT
     pub token_program: Program<'info, Token>,
+    pub ata_program: Program<'info, AssociatedToken>,
     // creates generic Account
     pub system_program: Program<'info, System>,
 }

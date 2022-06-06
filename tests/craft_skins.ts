@@ -44,6 +44,9 @@ describe("craft_skins", () => {
   let program_manager_acc: anchor.web3.PublicKey
   let program_manager_bump: number
 
+  let program_signer: anchor.web3.PublicKey
+  let program_signer_bump: number
+
   // stores recipe as mints[] + amounts[]
   let recipe_account: anchor.web3.PublicKey
   let recipe_bump: number
@@ -330,8 +333,10 @@ describe("craft_skins", () => {
 
     // create test user
     const user = anchor.web3.Keypair.generate();
+    console.log('user: ', manager.publicKey.toString())
+    let airdrop = await provider.connection.requestAirdrop(user.publicKey, anchor.web3.LAMPORTS_PER_SOL);
+    console.log('confirmed user airdrop? ', await provider.connection.confirmTransaction(airdrop));
 
-    let lamports = await Token.getMinBalanceRentForExemptMint(provider.connection);
     let airdrop_tx = await airdropIngredient(
       ingredient.publicKey, // ingredient mint to transfer
       provider.wallet.publicKey, // owner
@@ -359,7 +364,7 @@ describe("craft_skins", () => {
       skin_mint.publicKey,
       provider.wallet.publicKey
     );
-    console.log('skinFromATA: ', skinToATA.toString())
+    console.log('skinFromATA: ', skinFromATA.toString())
     // find skin metadata
     let skinMetadataPDA = skin_metadata_PDA;
     // find metadata.collectionMint
@@ -388,7 +393,7 @@ describe("craft_skins", () => {
     // recipe account (mints[], amounts[])
     let skinRecipe = await program.account.recipe.fetch(skinRecipePDA);
 
-    // find address of user ATA for each recipe mint
+    // find user token accounts for each recipe mint
     let user_tokens: anchor.web3.PublicKey[] = [];
     for (let i = 0; i < skinRecipe.mints.length; i++) {
       let token = await Token.getAssociatedTokenAddress(
@@ -399,17 +404,49 @@ describe("craft_skins", () => {
       );
       user_tokens.push(token);
     }
-    let remaining_accounts = user_tokens.map(token => {
-      return {pubkey: token, isSigner: false, isWritable: true}
-    });
+
+    // create signer for all program escrow trxs
+    [program_signer, program_signer_bump] =
+      await anchor.web3.PublicKey.findProgramAddress(
+        [Buffer.from("signer")],
+        program.programId
+      );
+
+    // find program escrow PDAs to transfer each ingredient mint to
+    let escrow_tokens: anchor.web3.PublicKey[] = [];
+    for (let x = 0; x < user_tokens.length; x++) {
+      // program escrow PDA derived from user ingredient token account + "escrow" string
+      let escrow = await Token.getAssociatedTokenAddress(
+        ASSOCIATED_TOKEN_PROGRAM_ID, // always associated token program id
+        TOKEN_PROGRAM_ID, // always token program id
+        skinRecipe.mints[x], // mint
+        program_signer, // token account authority,
+        true
+      );
+      console.log('ESCROW -> ', escrow.toString())
+      escrow_tokens.push(escrow);
+    }
+ 
+    // construct remaining accounts[]
+    let remaining_accounts: AccountMeta[] = []
+    for (let k = 0; k < escrow_tokens.length; k++) {
+      // add user ingredient tokens
+      remaining_accounts.push({pubkey: user_tokens[k], isSigner: false, isWritable: true});
+      // add user_token.mint as Mint account
+      remaining_accounts.push({pubkey: skinRecipe.mints[k], isSigner: false, isWritable: true})
+      // add program escrow PDAs to hold user tokens
+      remaining_accounts.push({pubkey: escrow_tokens[k], isSigner: false, isWritable: true})
+    }
+    console.log('remaining accounts -> ', remaining_accounts.map(account => {
+      return account.pubkey.toString()
+    }))
 
     try {
-      const craft_skin_tx = await program.methods.craftSkin(
-        recipe_bump
-        )
+      const craft_skin_tx = await program.methods.craftSkin()
         .accounts({
           owner: provider.wallet.publicKey,
           user: user.publicKey,
+          programSigner: program_signer,
           recipe: skinRecipePDA,
           recipeTokenAccount: skinCollectionATA,
           recipeMint: skinCollectionMint,
@@ -421,6 +458,7 @@ describe("craft_skins", () => {
           rentAccount: anchor.web3.SYSVAR_RENT_PUBKEY,
           tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
           tokenProgram: TOKEN_PROGRAM_ID,
+          ataProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           systemProgram: anchor.web3.SystemProgram.programId
         })
         .remainingAccounts(remaining_accounts)
