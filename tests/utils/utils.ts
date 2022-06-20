@@ -36,7 +36,8 @@ export async function createRecipe(
     ASSOCIATED_TOKEN_PROGRAM_ID, // always associated token program id
     TOKEN_PROGRAM_ID, // always token program id
     mint.publicKey, // mint
-    dest_owner // token account authority,
+    dest_owner, // token account authority,
+    true
   );
   tx.add(
     // create mint
@@ -168,7 +169,8 @@ export async function createSkin(
     ASSOCIATED_TOKEN_PROGRAM_ID, // always associated token program id
     TOKEN_PROGRAM_ID, // always token program id
     mint.publicKey, // mint
-    dest_owner // token account authority,
+    dest_owner, // token account authority,
+    true
   );
   tx.add(
     // create mint

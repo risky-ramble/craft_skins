@@ -72,7 +72,6 @@ describe("craft_skins", () => {
 
     // airdrop funds to program manager
     manager = anchor.web3.Keypair.generate();
-    console.log('manager: ', manager.publicKey.toString())
     let airdrop = await provider.connection.requestAirdrop(manager.publicKey, anchor.web3.LAMPORTS_PER_SOL);
     console.log('confirmed manager airdrop? ', await provider.connection.confirmTransaction(airdrop));
 
@@ -82,7 +81,6 @@ describe("craft_skins", () => {
         [Buffer.from("manager")],
         program.programId
       );
-    console.log('program_manager_acc: ', program_manager_acc.toString())
 
     // manager insufficient funds?
     try {
@@ -132,20 +130,13 @@ describe("craft_skins", () => {
     recipe_metadata_PDA = new_recipe_metadata_PDA, // set as global variable
     recipe_ata = new_recipe_ata // set as global variable
     recipe_master_edition = new_recipe_master_edition
-    console.log('recipe_mint: ', recipe_mint.publicKey.toString())
-    console.log('recipe_metadata_PDA: ', recipe_metadata_PDA.toString())
-    console.log('recipe_ata: ', recipe_ata.toString())
-    console.log('recipe_master_edition: ', recipe_master_edition.toString())
-
     let recipeSig = await provider.sendAndConfirm(recipe_mint_tx, [recipe_mint]);
-    console.log('mint recipe signature: ', recipeSig);
 
     // get PDA of Recipe account, which stores {mints[], amounts[]} needed to craft a skin
     [recipe_account, recipe_bump] = await getRecipeAccount(
       recipe_mint.publicKey,
       program.programId
     );
-    console.log('recipe_account: ', recipe_account.toString());
 
     // create test ingredient, send to admin for safekeeping
     let airdrop_tx = await createNewIngredient(
@@ -154,9 +145,9 @@ describe("craft_skins", () => {
       provider.wallet.publicKey,
       lamports,
       100
-    );
+      );
     let sig = await provider.sendAndConfirm(airdrop_tx, [ingredient]);
-    console.log('airdrop ingredient to admin, trx sig:', sig)
+    console.log('airdrop ingredient to admin:', sig)
 
     // test ingredient
     let ingredientMints = []
@@ -197,9 +188,6 @@ describe("craft_skins", () => {
       );
       let [recipe_info, _] = Metadata.fromAccountInfo(recipe_metadata);
   
-      console.log("recipe metadata ->")
-      console.log(recipe_info);
-  
       const created_recipe_token = await provider.connection.getParsedAccountInfo(
         recipe_ata
       );
@@ -239,11 +227,6 @@ describe("craft_skins", () => {
     skin_mint = new_skin_mint
     skin_metadata_PDA = new_skin_metadata_PDA
     skin_ata = new_skin_ata
-    console.log('skin_mint: ', skin_mint.publicKey.toString())
-    console.log('skin_metadata: ', skin_metadata_PDA.toString())
-    console.log('skin_ata: ', skin_ata.toString())
-    console.log('collection mint: ', recipe_mint.publicKey.toString())
-
     let skinSig = await provider.sendAndConfirm(skin_mint_tx, [skin_mint]);
     console.log('mint skin signature: ', skinSig);
 
@@ -297,16 +280,13 @@ describe("craft_skins", () => {
       );
       let [skin_info, __] = Metadata.fromAccountInfo(skin_metadata);
   
-      console.log("skin metadata ->")
-      console.log(skin_info);
-  
       let recover_collection_key: PublicKey = new PublicKey(skin_info.collection.key);
-      console.log('recover collection: ', recover_collection_key.toString())
+      console.log('skin collection: ', recover_collection_key.toString())
 
       let [collection_recipe_account, _] = await getRecipeAccount(recover_collection_key, program.programId);
-      console.log('collection_recipe: ', collection_recipe_account.toString())
+      console.log('collection recipe: ', collection_recipe_account.toString())
 
-      console.log("skin recipe == created recipe? -> ");
+      console.log("skin recipe == created recipe? ");
       // recipe found from skin.metadata.collection
       let found_recipe = await program.account.recipe.fetch(collection_recipe_account);
       // recipe created in CreateRecipe
@@ -344,11 +324,9 @@ describe("craft_skins", () => {
       10 // amount to transfer
     );
     let sig = await provider.sendAndConfirm(airdrop_tx);
-    console.log('airdrop ingredient to user? ', sig)
 
     // receive skin mint from client
     let skinToBuy = skin_mint.publicKey;
-    console.log('skinToBuy: ', skinToBuy.toString())
     // user skin ATA (to receive)
     let skinToATA = await Token.getAssociatedTokenAddress(
       ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -356,7 +334,6 @@ describe("craft_skins", () => {
       skin_mint.publicKey,
       user.publicKey,
     );
-    console.log('skinToATA: ', skinToATA.toString())
     // owner of skin (to send). This is provider.wallet
     let skinFromATA = await Token.getAssociatedTokenAddress(
       ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -364,7 +341,6 @@ describe("craft_skins", () => {
       skin_mint.publicKey,
       provider.wallet.publicKey
     );
-    console.log('skinFromATA: ', skinFromATA.toString())
     // find skin metadata
     let skinMetadataPDA = skin_metadata_PDA;
     // find metadata.collectionMint
@@ -389,7 +365,6 @@ describe("craft_skins", () => {
     );
     // find recipe PDA from collectionMint
     let [skinRecipePDA, _] = await getRecipeAccount(skinCollectionMint, program.programId);
-    console.log('skinRecipeAccount: ', skinRecipePDA.toString())
     // recipe account (mints[], amounts[])
     let skinRecipe = await program.account.recipe.fetch(skinRecipePDA);
 
@@ -423,7 +398,6 @@ describe("craft_skins", () => {
         program_signer, // token account authority,
         true
       );
-      console.log('ESCROW -> ', escrow.toString())
       escrow_tokens.push(escrow);
     }
  
@@ -437,7 +411,7 @@ describe("craft_skins", () => {
       // add program escrow PDAs to hold user tokens
       remaining_accounts.push({pubkey: escrow_tokens[k], isSigner: false, isWritable: true})
     }
-    console.log('remaining accounts -> ', remaining_accounts.map(account => {
+    console.log('remaining accounts ', remaining_accounts.map(account => {
       return account.pubkey.toString()
     }))
 
@@ -452,6 +426,7 @@ describe("craft_skins", () => {
           recipeMint: skinCollectionMint,
           recipeMetadata: skinCollectionMetadata,
           recipeMasterEdition: skinCollectionMasterEdition,
+          userSkinTokenAccount: skinToATA,
           skinTokenAccount: skinFromATA,
           skinMint: skinToBuy,
           skinMetadata: skinMetadataPDA,

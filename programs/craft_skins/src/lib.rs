@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::mint;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 use mpl_token_metadata::assertions::collection::assert_collection_verify_is_valid;
 use mpl_token_metadata::state::Metadata;
@@ -68,7 +69,7 @@ pub mod craft_skins {
         _recipe_bump: u8,
     ) -> Result<()> {
         // validate accounts to create skin
-        verify_skin_nft(
+        verify_skin(
             &ctx.accounts.skin_token_account, // token account holds everything
             &ctx.accounts.skin_mint,          // mint of skin
             &ctx.accounts.recipe_mint,
@@ -127,7 +128,7 @@ pub mod craft_skins {
         //program_signer_bump: u8,
     ) -> Result<()> {
         // validate accounts for existing skin
-        verify_skin_nft(
+        verify_skin(
             &ctx.accounts.skin_token_account, // token account holds everything
             &ctx.accounts.skin_mint,          // mint of skin
             &ctx.accounts.recipe_mint,
@@ -191,18 +192,13 @@ pub mod craft_skins {
             create_escrow_account(
                 &ctx.accounts.user,
                 &ctx.accounts.program_signer,
-                //&program_signer_bump,
                 escrow_token,
-                user_token,
                 user_mint,
-                ingredient_amount,
                 &ctx.accounts.rent_account,
                 &ctx.accounts.token_program,
                 &ctx.accounts.ata_program,
                 &ctx.accounts.system_program,
-                &ctx.program_id,
             )?;
-            msg!("create_escrow_account");
 
             // transfer token from user to escrow
             transfer_ingredient_to_escrow(
@@ -217,6 +213,27 @@ pub mod craft_skins {
             i += 3;
         }
         msg!("Done user ingredient validations & transfer to escrows");
+
+        create_user_token_account(
+            &ctx.accounts.user,
+            &ctx.accounts.program_signer,
+            &ctx.accounts.user_skin_token_account,
+            &ctx.accounts.skin_mint.to_account_info(),
+            &ctx.accounts.rent_account,
+            &ctx.accounts.token_program,
+            &ctx.accounts.ata_program,
+            &ctx.accounts.system_program,
+        )?;
+        msg!("Create if not init user_skin_token_account");
+
+        // transfer skin to user
+        transfer_skin_to_user(
+            &ctx.accounts.skin_token_account.to_account_info(),
+            &ctx.accounts.user_skin_token_account.to_account_info(),
+            &ctx.accounts.program_signer,
+            &ctx.accounts.token_program,
+        )?;
+        msg!("transfer_skin_to_user");
 
         Ok(())
     }
@@ -389,7 +406,11 @@ pub struct CraftSkin<'info> {
     ///CHECK: verification is run in instruction
     pub recipe_master_edition: AccountInfo<'info>,
 
-    // skin accounts, user to receive from program
+    // ATA the user owns to receive the skin
+    #[account(mut)]
+    /// CHECK: validated in craft_skin
+    pub user_skin_token_account: UncheckedAccount<'info>,
+    // ATA the program owns the skin to transfer to user
     #[account(mut)]
     pub skin_token_account: Account<'info, TokenAccount>,
     pub skin_mint: Account<'info, Mint>,

@@ -99,14 +99,12 @@ pub fn assert_escrow_derivation<'info, 'a>(
     Ok(bump)
 }
 
-pub fn verify_escrow_account(
+pub fn verify_token_account(
     escrow_token_account: &AccountInfo,
-    program_signer: &AccountInfo,
+    owner: &AccountInfo,
     mint: &AccountInfo,
 ) -> Result<bool> {
-    let check_escrow_key = get_associated_token_address(program_signer.key, mint.key);
-    msg!("escrow key {:?}", escrow_token_account.key);
-    msg!("echeck_escrow_key {:?}", check_escrow_key);
+    let check_escrow_key = get_associated_token_address(owner.key, mint.key);
 
     let data = escrow_token_account.try_borrow_data().unwrap();
     let acc = TokenAccount::try_deserialize(&mut &**data);
@@ -115,11 +113,11 @@ pub fn verify_escrow_account(
         Ok(account) => {
             assert_eq!(account.mint, mint.key());
             assert_eq!(escrow_token_account.key(), check_escrow_key);
-            assert_eq!(account.owner, program_signer.key());
+            assert_eq!(account.owner, owner.key());
             assert_owned_by(escrow_token_account, &SPL_TOKEN_ID)?;
             Ok(false)
         }
-        Err(err) => Ok(true),
+        Err(_err) => Ok(true),
     }
 }
 
@@ -169,7 +167,7 @@ pub fn verify_user_ingredient<'info>(
 }
 
 // validate accounts needed to make Recipe NFT
-pub fn verify_skin_nft<'info, 'a>(
+pub fn verify_skin<'info, 'a>(
     token_account: &Account<'info, TokenAccount>,
     mint: &Account<'info, Mint>,
     collection_mint: &Account<'info, Mint>,
@@ -235,27 +233,19 @@ pub fn verify_skin_nft<'info, 'a>(
 pub fn create_escrow_account<'info>(
     user: &Signer<'info>,
     program_signer: &AccountInfo<'info>,
-    //signer_bump: &u8,
     escrow_token: &AccountInfo<'info>,
-    user_token: &AccountInfo<'info>,
     mint: &AccountInfo<'info>,
-    amount: &u64,
     rent_account: &Sysvar<'info, Rent>,
     token_program: &Program<'info, Token>,
     ata_program: &Program<'info, AssociatedToken>,
     system_program: &Program<'info, System>,
-    program_id: &Pubkey,
 ) -> Result<()> {
-    // verify program escrow PDA seeds are correct
-    // will receive ingredient from user
-
-    let not_init = verify_escrow_account(
+    let not_init = verify_token_account(
         escrow_token,   // token account to receive ingredient from user
         program_signer, // owner of escrow_token account (is also a PDA)
         mint,           // expected ingredient mint defined in Recipe
     )
     .unwrap();
-    let signer_bump = assert_pda_derivation(program_signer, program_id, &["signer".as_bytes()])?;
 
     // escrow token account not initialized -> create account
     if not_init {
@@ -268,14 +258,43 @@ pub fn create_escrow_account<'info>(
             token_program: token_program.to_account_info(),
             rent: rent_account.to_account_info(),
         };
-        msg!("payer {:?}", cpi_accounts.payer.key);
-        msg!("ata {:?}", cpi_accounts.associated_token.key);
-        msg!("auth {:?}", cpi_accounts.authority.key);
-        msg!("mint {:?}", cpi_accounts.mint.key);
-        msg!("sys program {:?}", cpi_accounts.system_program.key);
-        msg!("token program {:?}", cpi_accounts.token_program.key);
-        msg!("rent {:?}", cpi_accounts.rent.key);
-        msg!("ata program {:?}", ata_program.key);
+
+        let cpi_ctx = CpiContext::new(ata_program.to_account_info(), cpi_accounts);
+        // create account
+        create(cpi_ctx)?;
+    }
+    Ok(())
+}
+
+/// Creates associated token account using Program Derived Address for the given seeds
+pub fn create_user_token_account<'info>(
+    user: &Signer<'info>,
+    program_signer: &AccountInfo<'info>,
+    token: &AccountInfo<'info>,
+    mint: &AccountInfo<'info>,
+    rent_account: &Sysvar<'info, Rent>,
+    token_program: &Program<'info, Token>,
+    ata_program: &Program<'info, AssociatedToken>,
+    system_program: &Program<'info, System>,
+) -> Result<()> {
+    let not_init = verify_token_account(
+        token, // token account to receive ingredient from user
+        user,  // owner of escrow_token account (is also a PDA)
+        mint,  // expected ingredient mint defined in Recipe
+    )
+    .unwrap();
+
+    // escrow token account not initialized -> create account
+    if not_init {
+        let cpi_accounts = Create {
+            payer: user.to_account_info(),
+            associated_token: token.to_account_info(),
+            authority: user.to_account_info(),
+            mint: mint.clone(),
+            system_program: system_program.to_account_info(),
+            token_program: token_program.to_account_info(),
+            rent: rent_account.to_account_info(),
+        };
 
         let cpi_ctx = CpiContext::new(ata_program.to_account_info(), cpi_accounts);
         // create account
@@ -298,6 +317,41 @@ pub fn transfer_ingredient_to_escrow<'info>(
     };
     let cpi_ctx = CpiContext::new(token_program.to_account_info(), cpi_accounts);
     transfer(cpi_ctx, *amount)?;
+    Ok(())
+}
+
+pub fn check_token_is_init<'info>(
+    token: &AccountInfo<'info>,
+    mint: &AccountInfo<'info>,
+    owner: &AccountInfo<'info>,
+) -> Result<bool> {
+    let data = token.try_borrow_data().unwrap();
+    let info = TokenAccount::try_deserialize(&mut &**data);
+    match info {
+        Ok(account) => {
+            assert_eq!(account.mint, mint.key());
+            assert_eq!(account.owner, owner.key());
+            assert_owned_by(token, &SPL_TOKEN_ID)?;
+            Ok(false)
+        }
+        Err(_err) => Ok(true),
+    }
+}
+
+pub fn transfer_skin_to_user<'info>(
+    from: &AccountInfo<'info>,
+    to: &AccountInfo<'info>,
+    owner: &AccountInfo<'info>,
+    token_program: &Program<'info, Token>,
+) -> Result<()> {
+    // transfer to user
+    let cpi_accounts = Transfer {
+        from: from.to_account_info(),
+        to: to.to_account_info(),
+        authority: owner.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new(token_program.to_account_info(), cpi_accounts);
+    transfer(cpi_ctx, 1)?;
     Ok(())
 }
 
